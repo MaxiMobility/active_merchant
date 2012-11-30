@@ -1,13 +1,13 @@
 require 'test_helper'
 
-class RemoteTransbankWebpayOneclickTest < Test::Unit::TestCase
+class RemoteTransbankOneclickTest < Test::Unit::TestCase
 
 
   def setup
-    @gateway = TransbankWebpayOneclickGateway.new(fixtures(:transbank_webpay_oneclick))
+    @gateway = TransbankOneclickGateway.new(fixtures(:transbank_webpay_oneclick))
 
-    TransbankWebpayOneclickGateway.wiredump_device = File.open(File.join('/tmp', "dump.log"), "a+")
-    TransbankWebpayOneclickGateway.wiredump_device.sync = true
+    TransbankOneclickGateway.wiredump_device = File.open(File.join('/tmp', "dump.log"), "a+")
+    TransbankOneclickGateway.wiredump_device.sync = true
 
     @amount = 100
     @credit_card = credit_card('4051885800381679')
@@ -21,7 +21,7 @@ class RemoteTransbankWebpayOneclickTest < Test::Unit::TestCase
   end
 
   def test_init_inscription
-    assert response = @gateway.init_inscription(:username => "Sam", :email => "sam@cabify.com", :return_url => "http://localhost:3000")
+    assert response = @gateway.init_inscription(:username => "Sam Lown", :email => "me@samlown.com", :return_url => "http://localhost:3000")
     puts response
   end
 
