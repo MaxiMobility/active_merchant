@@ -33,7 +33,6 @@ module ActiveMerchant #:nodoc:
     # to transbank:
     #
     #    gateway = ActiveMerchant::Billing::TransbankOneclickGateway.new(
-    #      :merchant_id => 12345678910,
     #      :private_key => File.read(Rails.root.join('config', 'oneclick.key')),
     #      :certificate => File.read(Rails.root.join('config', 'oneclick.crt'))
     #    )
@@ -46,19 +45,41 @@ module ActiveMerchant #:nodoc:
     #      :return_url => 'https://XYZ.com'
     #    )
     #
-    # Both :username and :email are required. The username is used for purely visual
-    # confirmation in the Transbank WebPay screens.
+    # Both :username and :email are required. They will be shown as a confirmation
+    # to the user when they enter their card details. Additionally, the :username
+    # is also required for each purchase and -must- be the same for the transaction
+    # to be accepted. If you're user's name can be modified, you'll need to work
+    # around this potential issue.
     #
-    # The inscription response will include a redirect_url and token. These
-    # must be used to show the user a form which will POST the 'token' under
-    # the parameter "TBK_TOKEN". Probably a good idea to use javascript to do
-    # this automatically.
+    # The inscription response will include a token. This must be used with the
+    # gateway's `#redirect_url` method to show the user a form prepared to
+    # POST the 'token' under the parameter "TBK_TOKEN". It's probably a good idea
+    # to use javascript to do submit the form automatically:
     #
-    #    <% form_tag response.redirect_url do %>
+    #    <% form_tag gateway.redirect_url do %>
     #      <%= hidden_field_tag :TBK_TOKEN, response.token %>
     #    <% end %>
     #
     # If Transbank decide to support GET redirect, this process will be updated.
+    #
+    # Assuming the process is successful, Transbank will POST the user back to your
+    # `return_url` with the parameter `TBK_TOKEN` in the body. Use this with the
+    # `#finish_inscription` method to finalize the new card process:
+    #
+    #     response = gateway.finish_inscription(params[:TBK_TOKEN])
+    #     if response.success?
+    #       # do something with response.token
+    #     else
+    #       # do something with response.message
+    #     end
+    #
+    # With the new payment token, you can hapily make payments:
+    #
+    #    response = gateway.purchase(4000, token, :username => "Sam Lown")
+    #
+    # Note that the CLP currency does not use cents and the `:username` must be the
+    # same as when the user added the credit card. To perform refunds use the
+    # authorization field:
     #
     #
     class TransbankOneclickGateway < Gateway
@@ -79,8 +100,10 @@ module ActiveMerchant #:nodoc:
       # The countries the gateway supports merchants from as 2 digit ISO country codes
       self.supported_countries = ['CL']
 
+      self.default_currency = 'CLP'
+
       # The card types supported by the payment gateway
-      self.supported_cardtypes = [:visa, :master, :american_express, :discover]
+      self.supported_cardtypes = [:visa, :master, :american_express, :diners_club, :magna]
 
       # The homepage URL of the gateway
       self.homepage_url = 'http://www.webpay.cl'
@@ -88,11 +111,8 @@ module ActiveMerchant #:nodoc:
       # The name of the gateway
       self.display_name = 'New Gateway'
 
-      # The Transbank server public key
-      #self.server_pem = File.read(File.dirname(__FILE__) + '/transbank/server.pem')
 
-
-      # Prepare the namespace constants
+      # Prepare the XML namespace and algorithm constants
       SOAP_NAMESPACE      = 'http://schemas.xmlsoap.org/soap/envelope/'
       TRANSBANK_NAMESPACE = 'http://webservices.webpayserver.transbank.com/'
       WSSE_NAMESPACE      = 'http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd'
@@ -106,12 +126,28 @@ module ActiveMerchant #:nodoc:
       SIGNATURE_ALGORITHM = 'http://www.w3.org/2000/09/xmldsig#rsa-sha1'
 
 
+      # Response Code Texts According the Transbank Oneclick manual.
+      RESPONSE_TEXTS = {
+        '0'   => 'Success',
+        '-1'  => 'Declined',
+        '-2'  => 'Declined',
+        '-3'  => 'Declined',
+        '-4'  => 'Declined',
+        '-5'  => 'Declined',
+        '-6'  => 'Declined',
+        '-7'  => 'Declined',
+        '-8'  => 'Declined',
+        '-97' => 'Maximum daily number of payments exceeded',
+        '-98' => 'Maximum payment amount exceeded',
+        '-99' => 'Maximum daily payment amount exceeded',
+      }
+
       # Creates a new instance
       #
-      # The merchant_id and private_key are require by this gateway.
+      # Only the private key and certificate are required.
       #
       def initialize(options = {})
-        requires!(options, :merchant_id, :private_key)
+        requires!(options, :private_key, :certificate)
         super
       end
 
@@ -155,13 +191,15 @@ module ActiveMerchant #:nodoc:
       # If no order_id is provided in the options, it will be
       # generated automatically.
       def purchase(money, token, options = {})
+        requires!(options, :username)
+
         data = {}
         add_amount(data, money)
         add_order(data, options[:order_id])
         add_customer_details(data, options)
         add_token(data, token)
 
-        commit :authorise_body, data
+        commit :authorize, data
       end
 
       def refund(money, authorization, options = {})
@@ -169,6 +207,12 @@ module ActiveMerchant #:nodoc:
         add_order(data, authorization)
 
         commit :reverse, data
+      end
+
+      # This needs to be a public method until transbank support a proper
+      # redirect with GET rather than requiring a POST.
+      def redirect_url
+        test? ? test_redirect_url : live_redirect_url
       end
 
       private
@@ -243,16 +287,12 @@ module ActiveMerchant #:nodoc:
       #   :amount
       #   :order_id
       #
-      # Taken from configuration:
-      #
-      #   :merchant_id
-      #
       def build_authorize_body(xml, data)
         xml['web'].authorize do
           xml_arg(xml) do
             xml.amount   data[:amount]
             xml.buyOrder data[:order_id]
-            xml.tbkUser  @options[:merchant_id]
+            xml.tbkUser  data[:token]
             xml.username data[:username]
           end
         end
@@ -288,6 +328,13 @@ module ActiveMerchant #:nodoc:
 
       def private_key
         @_private_key ||= OpenSSL::PKey::RSA.new(@options[:private_key])
+      end
+
+      # The Transbank server public key and certificate
+      def remote_certificate
+        @_remote_cert ||= OpenSSL::X509::Certificate.new(
+          File.read(File.dirname(__FILE__) + '/transbank/server.pem')
+        )
       end
 
       def signature_for(text)
@@ -383,31 +430,31 @@ module ActiveMerchant #:nodoc:
         test? ? test_url : live_url
       end
 
-      def redirect_url
-        test? ? test_redirect_url : live_redirect_url
-      end
-
       def commit(method, data)
-        method = "build_#{method}_body"
         xml = build_soap_request do |xml|
-          send(method, xml, data)
+          send("build_#{method}_body", xml, data)
         end
-        parse ssl_post(url, xml)
+        parse ssl_post(url, xml), data
+      rescue ActiveMerchant::ResponseError => e
+        parse e.response.body, data
       end
 
       # Parse the incoming SOAP response.
-      def parse(xml)
+      def parse(xml, data)
         doc = Nokogiri::XML.parse(xml)
 
         # Make sure that the digest is okay
         if valid_digest?(doc)
           params = body_to_params(doc)
-          TransbankOneclickResponse.new(params[:success], params[:error], params)
+
+          # Manually add the order_id as it is not provided by the server
+          params['buyOrder'] ||= data[:order_id] if data.include?(:order_id)
+
+          TransbankOneclickResponse.new(params['success'], params['message'], params)
         else
           TransbankOneclickResponse.new(false, "Invalid response digest!")
         end
       end
-
 
       # Convert the body into a hash of params and try to determine if we were successful
       def body_to_params(doc)
@@ -415,28 +462,32 @@ module ActiveMerchant #:nodoc:
         body = doc.xpath('/soap:Envelope/soap:Body', 'soap' => SOAP_NAMESPACE).first
         ret = body.xpath('//return').first
         if ret
-          if ret.children.length > 1
+          if ret.content =~ /true|false/
+            # From commands: reverse, removeUser
+            params['success'] = (ret.content == 'true')
+          else
             # From commands: initInscription, finishInscription, authorize
             ret.children.each do |child|
               unless child.name.blank?
-                params[child.name.to_sym] = child.content
+                params[child.name.to_s] = child.content
               end
             end
-            params[:success] = params[:token] ? true : (params[:responseCode] == 0)
-          else
-            # From commands: reverse, removeUser
-            params[:success] = (ret.content == 'true')
+            params['message'] = RESPONSE_TEXTS[params['responseCode']]
+            params['success'] = params['token'] ? true : (params['responseCode'] == "0")
           end
         else
           # Something is very wrong
           fault = body.xpath('//faultstring').first
-          params[:success] = false
-          params[:error]   = fault ? fault.content : "Unkown fault"
+          params['success'] = false
+          params['message']   = fault ? fault.content : "Unkown fault"
         end
         params
       end
 
       def valid_digest?(doc)
+        # If we have a Fault, don't check digest
+        return true if doc.xpath('//soap:Fault', 'soap' => SOAP_NAMESPACE).first()
+
         # Do we have any special namespaces for canonicalization?
         ins = doc.xpath('//ds:Transform/ec:InclusiveNamespaces', 'ds' => DS_NAMESPACE, 'ec' => EC_NAMESPACE).first
         ns = ins ? ins.attr('PrefixList').to_s.split(/ /) : nil
@@ -450,6 +501,7 @@ module ActiveMerchant #:nodoc:
 
         digest.content == digest_for(body)
       end
+
 
     end
   end

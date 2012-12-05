@@ -3,15 +3,30 @@ module ActiveMerchant
     class TransbankOneclickResponse < Response
 
       def token
-        @params[:token] || @params[:tbkUser]
-      end
-
-      def redirect_url
-        @params[:redirect_url]
+        @params['token'] || @params['tbkUser']
       end
 
       def authorization
-        @params[:transactionId]
+        @params['buyOrder']
+      end
+
+      def credit_card_type
+        case @params['creditCardType']
+        when 'Visa'
+          :visa
+        when 'AmericanExpress'
+          :american_express
+        when 'MasterCard'
+          :master
+        when 'Diners'
+          :diners_club
+        when 'Magna'
+          :magna
+        end
+      end
+
+      def credit_card_last_4
+        @params['last4CardDigits']
       end
 
     end

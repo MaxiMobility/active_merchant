@@ -4,7 +4,7 @@ class RemoteTransbankOneclickTest < Test::Unit::TestCase
 
 
   def setup
-    @gateway = TransbankOneclickGateway.new(fixtures(:transbank_webpay_oneclick))
+    @gateway = TransbankOneclickGateway.new(fixtures(:transbank_oneclick))
 
     TransbankOneclickGateway.wiredump_device = File.open(File.join('/tmp', "dump.log"), "a+")
     TransbankOneclickGateway.wiredump_device.sync = true
