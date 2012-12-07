@@ -27,14 +27,26 @@ module ActiveMerchant #:nodoc:
     # Method names for non-standard operations, such as inscription, are
     # based on the operation names provided by Transbank.
     #
+    # == Bugs
+    #
+    # Transbank have several bugs with their service which they are unwilling
+    # to fix at present. Given they have a complete monopoly in Chile, they
+    # just don't seem to care either. When developing please take the following
+    # into account:
+    #
+    #  * The `:return_url` in `init_inscription` cannot contain the & character. The service will return an error if this is the case.
+    #  * You cannot redirect the user to transbank using a GET request, you must use a form with a POST.
+    #  * The `username` to be provided during inscription must be unique and never be modified for future purchases. Adding a new payment method with the same username will provide the same token and *overwrite* any previous methods.
+    #  * The `order_id` must be numerical. This library will assign a number for you based on the current time with miliseconds which has a pretty slim chance of collisions.
+    #
     # == Using
     #
-    # Configure the gateway with the private key, whose public part you provided
-    # to transbank:
+    # Configure the gateway with the self-signed certificate you provided to
+    # transbank and private key:
     #
     #    gateway = ActiveMerchant::Billing::TransbankOneclickGateway.new(
-    #      :private_key => File.read(Rails.root.join('config', 'oneclick.key')),
-    #      :certificate => File.read(Rails.root.join('config', 'oneclick.crt'))
+    #      :certificate => File.read(Rails.root.join('config', 'oneclick.crt')),
+    #      :private_key => File.read(Rails.root.join('config', 'oneclick.key'))
     #    )
     #
     # A subscribe request must first be performed to know where to forward the user:
@@ -48,8 +60,7 @@ module ActiveMerchant #:nodoc:
     # Both :username and :email are required. They will be shown as a confirmation
     # to the user when they enter their card details. Additionally, the :username
     # is also required for each purchase and -must- be the same for the transaction
-    # to be accepted. If you're user's name can be modified, you'll need to work
-    # around this potential issue.
+    # to be accepted.
     #
     # The inscription response will include a token. This must be used with the
     # gateway's `#redirect_url` method to show the user a form prepared to
@@ -60,26 +71,27 @@ module ActiveMerchant #:nodoc:
     #      <%= hidden_field_tag :TBK_TOKEN, response.token %>
     #    <% end %>
     #
-    # If Transbank decide to support GET redirect, this process will be updated.
-    #
     # Assuming the process is successful, Transbank will POST the user back to your
     # `return_url` with the parameter `TBK_TOKEN` in the body. Use this with the
     # `#finish_inscription` method to finalize the new card process:
     #
-    #     response = gateway.finish_inscription(params[:TBK_TOKEN])
-    #     if response.success?
-    #       # do something with response.token
-    #     else
-    #       # do something with response.message
-    #     end
+    #    response = gateway.finish_inscription(params[:TBK_TOKEN])
+    #    if response.success?
+    #      # do something with response.token
+    #    else
+    #      # do something with response.message
+    #    end
     #
-    # With the new payment token, you can hapily make payments:
+    # With the new payment token, you can make payments:
     #
     #    response = gateway.purchase(4000, token, :username => "Sam Lown")
     #
-    # Note that the CLP currency does not use cents and the `:username` must be the
-    # same as when the user added the credit card. To perform refunds use the
-    # authorization field:
+    # Note that the CLP currency does not use cents and the `:username` must
+    # be the same as when the user added the credit card.
+    #
+    # To perform refundsuse the authorization field:
+    #
+    #    gateway.refund(response.authorization)
     #
     #
     class TransbankOneclickGateway < Gateway
@@ -97,7 +109,6 @@ module ActiveMerchant #:nodoc:
       self.test_redirect_url = "https://webpay3gdesa.transbank.cl/webpayserver/bp_inscription.cgi"
       self.live_redirect_url = "https://webpay3gdesa.transbank.cl/webpayserver/bp_inscription.cgi"
 
-      # The countries the gateway supports merchants from as 2 digit ISO country codes
       self.supported_countries = ['CL']
 
       self.default_currency = 'CLP'
@@ -109,7 +120,7 @@ module ActiveMerchant #:nodoc:
       self.homepage_url = 'http://www.webpay.cl'
 
       # The name of the gateway
-      self.display_name = 'New Gateway'
+      self.display_name = 'Transbank Oneclick'
 
 
       # Prepare the XML namespace and algorithm constants
@@ -180,7 +191,7 @@ module ActiveMerchant #:nodoc:
 
         data = {}
         add_token(data, token)
-        add_customer_details(options)
+        add_customer_details(data, options)
 
         commit :remove_user, data
       end
@@ -202,7 +213,7 @@ module ActiveMerchant #:nodoc:
         commit :authorize, data
       end
 
-      def refund(money, authorization, options = {})
+      def refund(authorization, options = {})
         data = {}
         add_order(data, authorization)
 

@@ -22,7 +22,8 @@ class RemoteTransbankOneclickTest < Test::Unit::TestCase
 
   def test_init_inscription
     assert response = @gateway.init_inscription(:username => "Sam Lown", :email => "me@samlown.com", :return_url => "http://localhost:3000")
-    puts response
+    assert_success response
+    assert response.token
   end
 
 #  def test_successful_purchase
