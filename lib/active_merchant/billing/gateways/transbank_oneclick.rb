@@ -542,6 +542,12 @@ module ActiveMerchant #:nodoc:
         def configure_ssl(http)
           super(http)
           http.ssl_version = :TLSv1
+          # Nasty hack to get arround certificate issues with some versions
+          # of Ruby and OpenSSL. Fortunately, this is not required in production
+          # mode.
+          if ActiveMerchant::Billing::Base.mode == :test
+            http.verify_mode = OpenSSL::SSL::VERIFY_NONE
+          end
         end
       end
 
