@@ -3,7 +3,7 @@ module ActiveMerchant
     class TransbankOneclickResponse < Response
 
       def token
-        @params['token'] || @params['tbkUser']
+        @params['token']
       end
 
       def authorization

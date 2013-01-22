@@ -21,8 +21,7 @@ module ActiveMerchant #:nodoc:
     # Once details have been secured, purchases and refunds can be made
     # using the provided token.
     #
-    # In effect, this gateway has more in common with PayPal Express than any
-    # of the others.
+    # In effect, this gateway has a lot in common with PayPal Express.
     #
     # Method names for non-standard operations, such as inscription, are
     # based on the operation names provided by Transbank.
@@ -30,18 +29,21 @@ module ActiveMerchant #:nodoc:
     # == Bugs
     #
     # Transbank have several bugs with their service which they are unwilling
-    # to fix at present. Given they have a complete monopoly in Chile, they
-    # just don't seem to care either. When developing please take the following
-    # into account:
+    # to fix at present. They don't seem to care either, probably due to
+    # their complete monopoly of credit card sales in Chile. When developing
+    # please take the following into account:
     #
     #  * The `:return_url` in `init_inscription` cannot contain the & character.
-    #    The service will return an error if this is the case.
+    #    The service will return an error if this is the case. This makes it
+    #    especially difficult to provide your own variables in the return url.
     #  * You cannot redirect the user to transbank using a GET request, you must
     #    use a form with a POST.
-    #  * The `username` to be provided during inscription must be unique and
-    #    never be modified for future purchases. Adding a new payment method with
-    #    the same username will provide the same token and *overwrite* any
-    #    previous methods.
+    #  * The `username` to be provided during inscription *must* be unique!
+    #    Adding a new payment method with the same username will provide the
+    #    same token and *overwrite* any previous method.
+    #  * To add to the complexity, the username will be shown in the payment
+    #    screen, so it is good idea to include the real name and a random code,
+    #    for example `Sam Lown (12syzq)`.
     #  * The `order_id` must be numerical. This library will assign a number for
     #    you based on the current time with miliseconds which has a pretty slim
     #    chance of collisions.
@@ -66,9 +68,9 @@ module ActiveMerchant #:nodoc:
     #    )
     #
     # Both :username and :email are required. They will be shown as a confirmation
-    # to the user when they enter their card details. Additionally, the :username
-    # is also required for each purchase and -must- be the same for the transaction
-    # to be accepted.
+    # to the user when they enter their card details. Internally the :username
+    # is required for each purchase and must be the same for the transaction
+    # to be accepted, as such this library tries to handle this automatically.
     #
     # The inscription response will include a token. This must be used with the
     # gateway's `#redirect_url` method to show the user a form prepared to
@@ -80,22 +82,21 @@ module ActiveMerchant #:nodoc:
     #    <% end %>
     #
     # Assuming the process is successful, Transbank will POST the user back to your
-    # `return_url` with the parameter `TBK_TOKEN` in the body. Use this with the
-    # `#finish_inscription` method to finalize the new card process:
+    # `return_url` with the parameter `TBK_TOKEN` in the body. Send this with the same
+    # username to the `#finish_inscription` method to finalize the new card process:
     #
-    #    response = gateway.finish_inscription(params[:TBK_TOKEN])
+    #    response = gateway.finish_inscription(params[:TBK_TOKEN], :username => "Sam Lown")
     #    if response.success?
     #      # do something with response.token
     #    else
     #      # do something with response.message
     #    end
     #
-    # With the new payment token, you can make payments:
+    # With the new token provided in the response, you can make a payment:
     #
-    #    response = gateway.purchase(4000, token, :username => "Sam Lown")
+    #    response = gateway.purchase(400000, token)
     #
-    # Note that the CLP currency does not use cents and the `:username` must
-    # be the same as when the user added the credit card.
+    # The payment in this case is for 4000 CLP in cents.
     #
     # To perform refunds, use the authorization property from the purchase
     # response:
@@ -192,14 +193,18 @@ module ActiveMerchant #:nodoc:
       end
 
       def finish_inscription(token, options = {})
+        requires!(options, :username)
+
         data = {}
         add_token(data, token)
+        add_customer_details(data, options)
 
         commit :finish_inscription, data
       end
 
-      def remove_user(token, options = {})
-        requires!(options, :username)
+      def remove_user(token)
+        token, username = split_token(token)
+        options[:username] = username
 
         data = {}
         add_token(data, token)
@@ -214,12 +219,12 @@ module ActiveMerchant #:nodoc:
       # If no order_id is provided in the options, it will be
       # generated automatically.
       def purchase(money, token, options = {})
-        requires!(options, :username)
-
         data = {}
         add_amount(data, money)
         add_order(data, options[:order_id])
         add_customer_details(data, options)
+
+        token, _ = split_token(token)
         add_token(data, token)
 
         commit :authorize, data
@@ -239,6 +244,15 @@ module ActiveMerchant #:nodoc:
       end
 
       private
+
+      def split_token(token)
+        token, username = token.split("|")
+        [token, Base64.urlsafe_decode64(username)]
+      end
+
+      def build_token(token, username)
+        [token, Base64.urlsafe_encode64(username)].join("|")
+      end
 
       def add_amount(data, money)
         data[:amount] = amount(money).to_s
@@ -374,9 +388,6 @@ module ActiveMerchant #:nodoc:
       # Please use extreme caution when modifying this method. Canonicalization is
       # complicated and can be easily put off course.
       def build_soap_request
-        security_ns = {
-        }
-
         xml = Nokogiri::XML::Builder.new do |xml|
           xml.Envelope('xmlns:soap' => SOAP_NAMESPACE, 'xmlns:web'  => TRANSBANK_NAMESPACE, 'xmlns:wsse' => WSSE_NAMESPACE) do
             # Add soap namespace to root
@@ -464,7 +475,8 @@ module ActiveMerchant #:nodoc:
 
       # Parse the incoming SOAP response.
       def parse(xml, data)
-        doc = Nokogiri::XML.parse(xml)
+        doc     = Nokogiri::XML.parse(xml)
+        options = @options.merge(:test => test?)
 
         # Make sure that the digest is okay
         if valid_digest?(doc)
@@ -473,7 +485,12 @@ module ActiveMerchant #:nodoc:
           # Manually add the order_id as it is not provided by the server
           params['buyOrder'] ||= data[:order_id] if data.include?(:order_id)
 
-          TransbankOneclickResponse.new(params['success'], params['message'], params)
+          # Build a usable token with the username
+          if params.include?('tbkUser')
+            params['token'] = build_token(params['tbkUser'], data[:username])
+          end
+
+          TransbankOneclickResponse.new(params['success'], params['message'], params, options)
         else
           TransbankOneclickResponse.new(false, "Invalid response digest!")
         end
@@ -502,7 +519,7 @@ module ActiveMerchant #:nodoc:
           # Something is very wrong
           fault = body.xpath('//faultstring').first
           params['success'] = false
-          params['message']   = fault ? fault.content : "Unkown fault"
+          params['message']   = fault ? fault.content : "Unknown fault"
         end
         params
       end
