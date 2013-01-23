@@ -92,7 +92,12 @@ module ActiveMerchant #:nodoc:
     #      # do something with response.message
     #    end
     #
-    # With the new token provided in the response, you can make a payment:
+    # To ensure the username is the same for both init and finish inscription,
+    # the recommended solution is to store the value in the user's session. It'll
+    # be automatically included in the token for future use, so you can safely
+    # forget about it.
+    #
+    # With the new inscription token, you can start to make payments:
     #
     #    response = gateway.purchase(400000, token)
     #
@@ -384,10 +389,10 @@ module ActiveMerchant #:nodoc:
         OpenSSL::Digest::SHA1.new.base64digest(text)
       end
 
-      # Build up a soap request with WS-Security and digital signatures.
+      # Build up a soap request envelope including the payload and basic structure.
       # Please use extreme caution when modifying this method. Canonicalization is
       # complicated and can be easily put off course.
-      def build_soap_request
+      def build_soap_envelope
         xml = Nokogiri::XML::Builder.new do |xml|
           xml.Envelope('xmlns:soap' => SOAP_NAMESPACE, 'xmlns:web'  => TRANSBANK_NAMESPACE, 'xmlns:wsse' => WSSE_NAMESPACE) do
             # Add soap namespace to root
@@ -437,8 +442,14 @@ module ActiveMerchant #:nodoc:
             end
           end
         end
+        xml
+      end
 
-        # To get round silly namespace issues and help canonicalization, reload the doc
+      # Add the magical security signatures to the soap envelope so that it
+      # is ready to send to the server.
+      def add_soap_digital_signatures(xml)
+        # To get round silly namespace issues and help canonicalization,
+        # reload the doc
         doc = Nokogiri::XML.parse(xml.doc.to_xml)
 
         # Extract the Body and generate for digest
@@ -465,10 +476,12 @@ module ActiveMerchant #:nodoc:
       end
 
       def commit(method, data)
-        xml = build_soap_request do |xml|
+        xml = build_soap_envelope do |xml|
           send("build_#{method}_body", xml, data)
         end
-        parse ssl_post(url, xml), data
+        doc = add_soap_digital_signatures(xml)
+
+        parse ssl_post(url, doc), data
       rescue ActiveMerchant::ResponseError => e
         parse e.response.body, data
       end
