@@ -224,13 +224,16 @@ module ActiveMerchant #:nodoc:
       # If no order_id is provided in the options, it will be
       # generated automatically.
       def purchase(money, token, options = {})
+        token, username = split_token(token)
+
         data = {}
+
+        options[:username] = username
+        add_customer_details(data, options)
+        add_token(data, token)
+
         add_amount(data, money)
         add_order(data, options[:order_id])
-        add_customer_details(data, options)
-
-        token, _ = split_token(token)
-        add_token(data, token)
 
         commit :authorize, data
       end

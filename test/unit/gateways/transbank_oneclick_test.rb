@@ -20,7 +20,16 @@ class TransbankOneclickTest < Test::Unit::TestCase
   end
 
   def test_init_inscription
-    @gateway.expects(:ssl_post).with(anything, successful_init_inscription_request).returns(successful_init_inscription_response)
+    # Note to self, if this signature does not match, the request is different than expected!
+    @gateway.expects(:ssl_post).with(
+      anything,
+      all_of(
+        includes("<ds:SignatureValue>kRb3oJXQwmB303qWqdgxpsLAjxeCW8CAZKOB8CeecRO9XVh8KXQgSRke2hAOcvmqScQZqE7WVlp4cL5NhEBooTUddz6H9WO+EhRdy08Rx5q4u+OElJeMLNd8PzuSJnr7TCWvqXkQsoyJS4OiUGieUSX/bT6WKyETBW9r861Ea652a3lBMyr2nyvucqpbpq7ZIz2AZoLNoJhYaz5ztfJoO8SQ62+hht5ADn7c2LG6UR6dTuJgRNMfQggKyL1I9smno988YLPr3Z41NlQnzHxWvsQ5EWF67hCWkwbYGc6C7twS18skhchLVibTJMCFW6LzNusDquB/Z0xZUfm0mra66A==</ds:SignatureValue>"),
+        includes("<email>sam@gmail.com</email>"),
+        includes("<responseURL>http://localhost:3000</responseURL>"),
+        includes("<username>Sam</username>")
+      )
+    ).returns(successful_init_inscription_response)
 
     assert response = @gateway.init_inscription(:username => "Sam", :email => "sam@gmail.com", :return_url => "http://localhost:3000")
     assert_success response
@@ -29,7 +38,13 @@ class TransbankOneclickTest < Test::Unit::TestCase
   end
 
   def test_finish_inscription
-    @gateway.expects(:ssl_post).returns(successful_finish_inscription_response)
+    @gateway.expects(:ssl_post).with(
+      anything,
+      all_of(
+        includes("<ds:SignatureValue>x9s1+GoY7gjMJGFb5svFg3x8FWBGxri0EGqzXDhZJtocTiahV2SC/RhUtL3lYzbs/dTe4E68F79uS2Dalr9lKH2zwCBg262Ui62sTbyNrDqp/RuKTP62MTDlzt6taC+AbUz91iCSl8jUcyZyvnq5sDuqJj5PKtal2Hu8pnTp9ZTNGSl0bt/Ov/R0WISB6cM5D2XweECKlyQUDJagBvtq+3Oo+OJLjFeO8Grh33LTusrPaXv2ehlr6yG2Dms3l4gS9+grhFQcS7AuX/ldQRuN6ktIxg9F9dJxAq7DW2V0aIpUcLTCd7itC4Pr+daerK7Xlvn/CdwqMOSUxaZfkGAvmQ==</ds:SignatureValue>"),
+        includes("<token>e97096ec877f7ecad37af04d9c58923b611913ce4cf0af774bd769058eeafd05</token>")
+      )
+    ).returns(successful_finish_inscription_response)
 
     assert response = @gateway.finish_inscription(@init_token, :username => "Sam")
     assert_success response
@@ -40,7 +55,14 @@ class TransbankOneclickTest < Test::Unit::TestCase
   end
 
   def test_remove_user
-    @gateway.expects(:ssl_post).returns(successful_remove_user_response)
+    @gateway.expects(:ssl_post).with(
+      anything,
+      all_of(
+        includes("<ds:SignatureValue>qqERI6oevWkU/tjHZyH6R2aQDAGFQy8QHdS7Hk3DFaqxifzimUIQ+i8+WjDxC7ino9LSTFlijzHp/KasnfoGe6mg1u9qa256bVdJ3zFUlq90JF7xFtnP95mQYtxPYoUrJE0FGpqYUxPdu08NOtkShR4zSYC0W9HhDdp6he+v90YdcFliouybsTI6nqjhaEPBR/wTtbSILAPkj4Sh+Wm1j6dvzIpOpiBPkhs4fAm0VExO8MLMguYAEuGc2OURcRMs0ZjSdGhk2DafZ0narrr7Qx7NtdhBcuUWeq6jd/ab0tyx44+SpBbSEYLRg2ap7cBtp+FsNBIxKxM9B2cypvcu4Q==</ds:SignatureValue>"),
+        includes("<tbkUser>92360d50-0c23-4040-a734-fc5f33b97791</tbkUser>"),
+        includes("<username>Sam</username>")
+      )
+    ).returns(successful_remove_user_response)
 
     assert response = @gateway.remove_user(@user_token)
     assert_success response
@@ -48,7 +70,16 @@ class TransbankOneclickTest < Test::Unit::TestCase
   end
 
   def test_successful_purchase
-    @gateway.expects(:ssl_post).returns(successful_purchase_response)
+    @gateway.expects(:ssl_post).with(
+      anything,
+      all_of(
+        includes("<ds:SignatureValue>R6bmQ9OxAxSeYXrXkCtM1rKLFT3WsKstNoAey9nXFSqCvFGkH8QAgRnzBgdrKVcGfWohYkZVozeZ2+CgPwo+8/tGFneWGlcJ22ppntulVk3FseBNWYEhVRwylNfcemVfhra8rCNkGZ2JWIZ5QWbL+zb4DMdHZYcLJrt3lmyOQP10581hrEUWcbCMmn05KqgMdv54+GZVauIwot1OpPxk0AQeug3fVfq1opHoFobCPov3DlXbXv/k2938tM3Cd2yE7cDVCDn5AWlIVV6w7nKs9nVRr3tEKm121YSZJaQiVH1k6EkCJMoXicybTgWh7XFn6LeMKT9GRCH1Fk9vnRNGmQ==</ds:SignatureValue>"),
+        includes("<amount>10.00</amount>"),
+        includes("<buyOrder>20130123122904961</buyOrder>"),
+        includes("<tbkUser>92360d50-0c23-4040-a734-fc5f33b97791</tbkUser>"),
+        includes("<username>Sam</username>")
+      )
+    ).returns(successful_purchase_response)
 
     assert response = @gateway.purchase(@amount, @user_token, @options)
     assert_success response
@@ -79,10 +110,6 @@ class TransbankOneclickTest < Test::Unit::TestCase
   #end
 
   private
-
-  def successful_init_inscription_request
-    "<?xml version='1.0'?>\n<soap:Envelope xmlns:soap='http://schemas.xmlsoap.org/soap/envelope/' xmlns:web='http://webservices.webpayserver.transbank.com/' xmlns:wsse='http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd'>\n  <soap:Header>\n    <wsse:Security xmlns:wsu='http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd' xmlns:ec='http://www.w3.org/2001/10/xml-exc-c14n#' xmlns:ds='http://www.w3.org/2000/09/xmldsig#' soap:mustUnderstand='1'>\n      <ds:Signature Id='SIG-16'>\n        <ds:SignedInfo>\n          <ds:CanonicalizationMethod Algorithm='http://www.w3.org/2001/10/xml-exc-c14n#'>\n            <ec:InclusiveNamespaces PrefixList='soap web'/>\n          </ds:CanonicalizationMethod>\n          <ds:SignatureMethod Algorithm='http://www.w3.org/2000/09/xmldsig#rsa-sha1'/>\n          <ds:Reference URI='#id-body-1'>\n            <ds:Transforms>\n              <ds:Transform Algorithm='http://www.w3.org/2001/10/xml-exc-c14n#'>\n                <ec:InclusiveNamespaces PrefixList='web'/>\n              </ds:Transform>\n            </ds:Transforms>\n            <ds:DigestMethod Algorithm='http://www.w3.org/2000/09/xmldsig#sha1'/>\n            <ds:DigestValue>k3hbSdGFDX/wmkb/yRE1OIQF2aY=</ds:DigestValue>\n          </ds:Reference>\n        </ds:SignedInfo>\n        <ds:SignatureValue>kRb3oJXQwmB303qWqdgxpsLAjxeCW8CAZKOB8CeecRO9XVh8KXQgSRke2hAOcvmqScQZqE7WVlp4cL5NhEBooTUddz6H9WO+EhRdy08Rx5q4u+OElJeMLNd8PzuSJnr7TCWvqXkQsoyJS4OiUGieUSX/bT6WKyETBW9r861Ea652a3lBMyr2nyvucqpbpq7ZIz2AZoLNoJhYaz5ztfJoO8SQ62+hht5ADn7c2LG6UR6dTuJgRNMfQggKyL1I9smno988YLPr3Z41NlQnzHxWvsQ5EWF67hCWkwbYGc6C7twS18skhchLVibTJMCFW6LzNusDquB/Z0xZUfm0mra66A==</ds:SignatureValue>\n        <ds:KeyInfo Id='KI-1'>\n          <wsse:SecurityTokenReference wsu:Id='STR-1'>\n            <ds:X509Data>\n              <ds:X509IssuerSerial>\n                <ds:X509IssuerName>C=CL,ST=Some-State,L=SANTIAGO,O=Internet Widgits Pty Ltd,CN=597010000003</ds:X509IssuerName>\n                <ds:X509SerialNumber>13116153695474272147</ds:X509SerialNumber>\n              </ds:X509IssuerSerial>\n            </ds:X509Data>\n          </wsse:SecurityTokenReference>\n        </ds:KeyInfo>\n      </ds:Signature>\n    </wsse:Security>\n  </soap:Header>\n  <soap:Body xmlns:wsu='http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd' wsu:Id='id-body-1'>\n    <web:initInscription>\n      <arg0>\n        <email>sam@gmail.com</email>\n        <responseURL>http://localhost:3000</responseURL>\n        <username>Sam</username>\n      </arg0>\n    </web:initInscription>\n  </soap:Body>\n</soap:Envelope>\n"
-  end
 
   def successful_init_inscription_response
     "<soap:Envelope xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\"><soap:Header><wsse:Security xmlns:wsse=\"http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd\" xmlns:wsu=\"http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd\" soap:mustUnderstand=\"1\"><ds:Signature xmlns:ds=\"http://www.w3.org/2000/09/xmldsig#\" Id=\"SIG-60\"><ds:SignedInfo><ds:CanonicalizationMethod Algorithm=\"http://www.w3.org/2001/10/xml-exc-c14n#\"><ec:InclusiveNamespaces xmlns:ec=\"http://www.w3.org/2001/10/xml-exc-c14n#\" PrefixList=\"soap\"/></ds:CanonicalizationMethod><ds:SignatureMethod Algorithm=\"http://www.w3.org/2000/09/xmldsig#rsa-sha1\"/><ds:Reference URI=\"#id-59\"><ds:Transforms><ds:Transform Algorithm=\"http://www.w3.org/2001/10/xml-exc-c14n#\"><ec:InclusiveNamespaces xmlns:ec=\"http://www.w3.org/2001/10/xml-exc-c14n#\" PrefixList=\"\"/></ds:Transform></ds:Transforms><ds:DigestMethod Algorithm=\"http://www.w3.org/2000/09/xmldsig#sha1\"/><ds:DigestValue>8cmwWRN5iCqacfLlFmviQzcRV5A=</ds:DigestValue></ds:Reference></ds:SignedInfo><ds:SignatureValue>UZlcwvr07VBXTE8qhRNhLpvMHnpJcfqtEzKhMMi8eGkKwlg1HqKBpaMikf098Mfy/M+t5wcFt52i\nFsSDCjNy5m0uOgmYvAvpvbroSxiXy76Y/wHWxsWzL1e1LbAgUSN4yCFeOz4UzMgII2VSh9E0EFhe\n1gfkZ7FR7pCoLomQv6Q=</ds:SignatureValue><ds:KeyInfo Id=\"KI-5F7FD9365593894E07135470842303889\"><wsse:SecurityTokenReference wsu:Id=\"STR-5F7FD9365593894E07135470842303890\"><ds:X509Data><ds:X509IssuerSerial><ds:X509IssuerName>CN=10,OU=DCR,O=Transbank,L=Santiago,ST=CL,C=CL</ds:X509IssuerName><ds:X509SerialNumber>1345478488</ds:X509SerialNumber></ds:X509IssuerSerial></ds:X509Data></wsse:SecurityTokenReference></ds:KeyInfo></ds:Signature></wsse:Security></soap:Header><soap:Body xmlns:wsu=\"http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd\" wsu:Id=\"id-59\"><ns2:initInscriptionResponse xmlns:ns2=\"http://webservices.webpayserver.transbank.com/\"><return><token>e97096ec877f7ecad37af04d9c58923b611913ce4cf0af774bd769058eeafd05</token></return></ns2:initInscriptionResponse></soap:Body></soap:Envelope>"

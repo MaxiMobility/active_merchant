@@ -9,7 +9,7 @@ class RemoteTransbankOneclickTest < Test::Unit::TestCase
     TransbankOneclickGateway.wiredump_device = File.open(File.join('/tmp', "oneclick.log"), "a+")
     TransbankOneclickGateway.wiredump_device.sync = true
 
-    @amount = 600000
+    @amount = 60000
     @credit_card = credit_card('4051885800381679')
     @declined_card = credit_card('4051885600446623')
 
@@ -26,32 +26,34 @@ class RemoteTransbankOneclickTest < Test::Unit::TestCase
     assert response.token
   end
 
-  def test_finish_and_remove_inscription
-    assert response = @gateway.init_inscription(:username => "Sam Lown", :email => "me@samlown.com", :return_url => "http://localhost:3000")
+  # These tests cannot be run as a the confirmation screens must first be completed
 
-    # Finish
-    assert response = @gateway.finish_inscription(response.token, :username => "Sam Lown")
-    assert_success response
-    assert response.token
+  #def test_finish_and_remove_inscription
+  #  assert response = @gateway.init_inscription(:username => "Sam Lown", :email => "me@samlown.com", :return_url => "http://localhost:3000")
 
-    # Remove
-    assert response = @gateway.remove_user(response.token)
-    assert_success response
-  end
+  #  # Finish
+  #  assert response = @gateway.finish_inscription(response.token, :username => "Sam Lown")
+  #  assert_success response
+  #  assert response.token
 
-  def test_successful_purchase_and_refund
-    # Inscription
-    assert response = @gateway.init_inscription(:username => "Sam Lown", :email => "me@samlown.com", :return_url => "http://localhost:3000")
-    assert response = @gateway.finish_inscription(response.token, :username => "Sam Lown")
+  #  # Remove
+  #  assert response = @gateway.remove_user(response.token)
+  #  assert_success response
+  #end
 
-    # Purchase
-    assert response = @gateway.purchase(@amount, response.token)
-    assert_success response
-    assert response.authorization
+  #def test_successful_purchase_and_refund
+  #  # Inscription
+  #  assert response = @gateway.init_inscription(:username => "Sam Lown", :email => "me@samlown.com", :return_url => "http://localhost:3000")
+  #  assert response = @gateway.finish_inscription(response.token, :username => "Sam Lown")
 
-    # Refund
-    assert response = @gateway.refund(response.authorization)
-    assert_success response
-  end
+  #  # Purchase
+  #  assert response = @gateway.purchase(@amount, response.token)
+  #  assert_success response
+  #  assert response.authorization
+
+  #  # Refund
+  #  assert response = @gateway.refund(response.authorization)
+  #  assert_success response
+  #end
 
 end
