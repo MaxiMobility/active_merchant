@@ -238,7 +238,11 @@ module ActiveMerchant #:nodoc:
         commit :authorize, data
       end
 
-      def refund(authorization, options = {})
+      # Void or "reversa" as Transbank call it can only be called 24
+      # hours after a purchase operation.
+      # Its main purpose is to cancel an operation if something
+      # went wrong during the purchase process.
+      def void(authorization, options = {})
         data = {}
         add_order(data, authorization)
 
