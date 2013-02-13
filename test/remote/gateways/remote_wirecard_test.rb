@@ -60,6 +60,10 @@ class RemoteWirecardTest < Test::Unit::TestCase
     assert_success capture
   end
 
+  def test_successful_authorize_and_void
+
+  end
+
   def test_successful_purchase
     assert response = @gateway.purchase(@amount, @credit_card, @options)
     # puts response.message
@@ -86,6 +90,11 @@ class RemoteWirecardTest < Test::Unit::TestCase
 
     assert_success response
     assert response.message[/THIS IS A DEMO/]
+  end
+
+  def test_successful_purchase_with_refund
+
+
   end
 
   # Failure tested

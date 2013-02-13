@@ -72,10 +72,22 @@ module ActiveMerchant #:nodoc:
         commit(:capture, money, options)
       end
 
+      # Reversal request, cancel an operation within 24hours
+      def void(authorization, options = {})
+        options[:preauthorization] = authorization
+        commit(:reversal, nil, options)
+      end
+
       # Purchase
       def purchase(money, creditcard, options = {})
         options[:credit_card] = creditcard
         commit(:purchase, money, options)
+      end
+
+      # Send money back
+      def refund(money, authorization, options = {})
+        options[:preauthorization] = authorization
+        commit(:refund, money, options)
       end
 
       private
@@ -156,7 +168,7 @@ module ActiveMerchant #:nodoc:
               add_invoice(xml, money, options)
               add_creditcard(xml, options[:credit_card])
               add_address(xml, options[:billing_address])
-            when :capture
+            when :capture, :reversal, :refund
               xml.tag! 'GuWID', options[:preauthorization]
               add_amount(xml, money)
             end
@@ -176,7 +188,7 @@ module ActiveMerchant #:nodoc:
 
       # Include the amount in the transaction-xml
       def add_amount(xml, money)
-        xml.tag! 'Amount', amount(money)
+        xml.tag! 'Amount', amount(money) unless money.nil?
       end
 
       # Includes the credit-card data to the transaction-xml
