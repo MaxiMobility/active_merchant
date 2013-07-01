@@ -581,6 +581,14 @@ transnational:
   login: demo
   password: password
 
+transbank_webpay_oneclick:
+  merchant_id: 12312312312312
+  private_key: |
+    PASTE PRIVATE KEY
+  certificate: |
+    PASTE CERTIFICATE
+
+
 # Working credentials, no need to replace
 trust_commerce:
   login: 'TestMerchant'
