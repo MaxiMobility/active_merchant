@@ -586,9 +586,9 @@ module ActiveMerchant #:nodoc:
         end
       end
 
-      def new_connection(endpoint)
-        CrippledSslConnection.new(endpoint)
-      end
+      #def new_connection(endpoint)
+      #  CrippledSslConnection.new(endpoint)
+      #end
 
       ####
 
