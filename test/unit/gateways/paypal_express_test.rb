@@ -4,8 +4,8 @@ require 'nokogiri'
 class PaypalExpressTest < Test::Unit::TestCase
   TEST_REDIRECT_URL        = 'https://www.sandbox.paypal.com/cgi-bin/webscr?cmd=_express-checkout&token=1234567890'
   TEST_REDIRECT_URL_MOBILE = 'https://www.sandbox.paypal.com/cgi-bin/webscr?cmd=_express-checkout-mobile&token=1234567890'
-  LIVE_REDIRECT_URL        = 'https://www.paypal.com/cgibin/webscr?cmd=_express-checkout&token=1234567890'
-  LIVE_REDIRECT_URL_MOBILE = 'https://www.paypal.com/cgibin/webscr?cmd=_express-checkout-mobile&token=1234567890'
+  LIVE_REDIRECT_URL        = 'https://www.paypal.com/cgi-bin/webscr?cmd=_express-checkout&token=1234567890'
+  LIVE_REDIRECT_URL_MOBILE = 'https://www.paypal.com/cgi-bin/webscr?cmd=_express-checkout-mobile&token=1234567890'
 
   TEST_REDIRECT_URL_WITHOUT_REVIEW = "#{TEST_REDIRECT_URL}&useraction=commit"
   LIVE_REDIRECT_URL_WITHOUT_REVIEW = "#{LIVE_REDIRECT_URL}&useraction=commit"
@@ -86,6 +86,7 @@ class PaypalExpressTest < Test::Unit::TestCase
     assert_equal 'EC-2XE90996XX9870316', response.token
     assert_equal 'FWRVKNRRZ3WUC', response.payer_id
     assert_equal 'buyer@jadedpallet.com', response.email
+    assert_equal 'This is a test note', response.note
 
     assert address = response.address
     assert_equal 'Fred Brooks', address['name']
@@ -285,6 +286,45 @@ class PaypalExpressTest < Test::Unit::TestCase
     assert_equal '1', REXML::XPath.first(xml, '//n2:OrderTotal').text
   end
 
+  def test_fractional_discounts_are_correctly_calculated_with_jpy_currency
+    xml = REXML::Document.new(@gateway.send(:build_setup_request, 'SetExpressCheckout', 14250, { :items =>
+                            [{:name => 'item one', :description => 'description', :amount => 15000, :number => 1, :quantity => 1},
+                             {:name => 'Discount', :description => 'Discount', :amount => -750, :number => 2, :quantity => 1}],
+                             :subtotal => 14250, :currency => 'JPY', :shipping => 0, :handling => 0, :tax => 0 }))
+
+    assert_equal '142', REXML::XPath.first(xml, '//n2:OrderTotal').text
+    assert_equal '142', REXML::XPath.first(xml, '//n2:ItemTotal').text
+    amounts = REXML::XPath.match(xml, '//n2:Amount')
+    assert_equal '150', amounts[0].text
+    assert_equal '-8', amounts[1].text
+  end
+
+  def test_non_fractional_discounts_are_correctly_calculated_with_jpy_currency
+    xml = REXML::Document.new(@gateway.send(:build_setup_request, 'SetExpressCheckout', 14300, { :items =>
+                            [{:name => 'item one', :description => 'description', :amount => 15000, :number => 1, :quantity => 1},
+                             {:name => 'Discount', :description => 'Discount', :amount => -700, :number => 2, :quantity => 1}],
+                             :subtotal => 14300, :currency => 'JPY', :shipping => 0, :handling => 0, :tax => 0 }))
+
+    assert_equal '143', REXML::XPath.first(xml, '//n2:OrderTotal').text
+    assert_equal '143', REXML::XPath.first(xml, '//n2:ItemTotal').text
+    amounts = REXML::XPath.match(xml, '//n2:Amount')
+    assert_equal '150', amounts[0].text
+    assert_equal '-7', amounts[1].text
+  end
+
+  def test_fractional_discounts_are_correctly_calculated_with_usd_currency
+    xml = REXML::Document.new(@gateway.send(:build_setup_request, 'SetExpressCheckout', 14250, { :items =>
+                            [{:name => 'item one', :description => 'description', :amount => 15000, :number => 1, :quantity => 1},
+                             {:name => 'Discount', :description => 'Discount', :amount => -750, :number => 2, :quantity => 1}],
+                             :subtotal => 14250, :currency => 'USD', :shipping => 0, :handling => 0, :tax => 0 }))
+
+    assert_equal '142.50', REXML::XPath.first(xml, '//n2:OrderTotal').text
+    assert_equal '142.50', REXML::XPath.first(xml, '//n2:ItemTotal').text
+    amounts = REXML::XPath.match(xml, '//n2:Amount')
+    assert_equal '150.00', amounts[0].text
+    assert_equal '-7.50', amounts[1].text
+  end
+
   def test_does_not_add_allow_note_if_not_specified
     xml = REXML::Document.new(@gateway.send(:build_setup_request, 'SetExpressCheckout', 0, { }))
 
@@ -386,6 +426,28 @@ class PaypalExpressTest < Test::Unit::TestCase
     assert_equal "10201", response.params["error_codes"]
   end
 
+  def test_agreement_details_successful
+    @gateway.expects(:ssl_post).returns(successful_billing_agreement_details_response)
+    response = @gateway.agreement_details("B-6VE21702A47915521")
+
+    assert response.success?
+    assert_equal "Success", response.params['ack']
+    assert_equal "Success", response.message
+    assert_equal "B-6VE21702A47915521", response.params["billing_agreement_id"]
+    assert_equal "Active", response.params["billing_agreement_status"]
+  end
+
+  def test_agreement_details_failure
+    @gateway.expects(:ssl_post).returns(failure_billing_agreement_details_response)
+    response = @gateway.agreement_details("bad_reference_id")
+
+    assert !response.success?
+    assert_equal "Failure", response.params['ack']
+    assert_equal "Billing Agreement Id or transaction Id is not valid", response.message
+    assert_equal "11451", response.params["error_codes"]
+  end
+
+
   def test_build_reference_transaction_test
     PaypalExpressGateway.application_id = 'ActiveMerchant_FOO'
     xml = REXML::Document.new(@gateway.send(:build_reference_transaction_request, 'Sale', 2000, {
@@ -404,6 +466,12 @@ class PaypalExpressTest < Test::Unit::TestCase
     assert_equal 'invoice_id', REXML::XPath.first(xml, '//DoReferenceTransactionReq/DoReferenceTransactionRequest/n2:DoReferenceTransactionRequestDetails/n2:PaymentDetails/n2:InvoiceID').text
     assert_equal 'ActiveMerchant_FOO', REXML::XPath.first(xml, '//DoReferenceTransactionReq/DoReferenceTransactionRequest/n2:DoReferenceTransactionRequestDetails/n2:PaymentDetails/n2:ButtonSource').text
     assert_equal '127.0.0.1', REXML::XPath.first(xml, '//DoReferenceTransactionReq/DoReferenceTransactionRequest/n2:DoReferenceTransactionRequestDetails/n2:IPAddress').text
+  end
+
+  def test_build_details_billing_agreement_request_test
+    xml = REXML::Document.new(@gateway.send(:build_details_billing_agreement_request, 'reference_ID'))
+    assert_equal 'reference_ID', REXML::XPath.first(xml, '//BillAgreementUpdateReq/BAUpdateRequest/ReferenceID').text
+    assert_nil REXML::XPath.first(xml, '//BillAgreementUpdateReq/BAUpdateRequest/BillingAgreementStatus')
   end
 
   def test_authorize_reference_transaction
@@ -540,6 +608,7 @@ class PaypalExpressTest < Test::Unit::TestCase
         :callback_url => "http://example.com/update_callback",
         :callback_timeout => 2,
         :callback_version => '53.0',
+        :funding_sources => {:source => 'BML'},
         :shipping_options => [{:default => true,
                                :name => "first one",
                                :amount => 10}]
@@ -589,7 +658,7 @@ class PaypalExpressTest < Test::Unit::TestCase
   end
 
 
-def successful_authorize_reference_transaction_response
+  def successful_authorize_reference_transaction_response
   <<-RESPONSE
 <?xml version="1.0" encoding="UTF-8"?>
 <SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:SOAP-ENC="http://schemas.xmlsoap.org/soap/encoding/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:cc="urn:ebay:apis:CoreComponentTypes" xmlns:wsu="http://schemas.xmlsoap.org/ws/2002/07/utility" xmlns:saml="urn:oasis:names:tc:SAML:1.0:assertion" xmlns:ds="http://www.w3.org/2000/09/xmldsig#" xmlns:wsse="http://schemas.xmlsoap.org/ws/2002/12/secext" xmlns:ed="urn:ebay:apis:EnhancedDataTypes" xmlns:ebl="urn:ebay:apis:eBLBaseComponents" xmlns:ns="urn:ebay:api:PayPalAPI">
@@ -696,6 +765,7 @@ def successful_authorize_reference_transaction_response
       <Credentials xmlns="urn:ebay:apis:eBLBaseComponents" xsi:type="ebl:UserIdPasswordType">
         <Username xsi:type="xs:string"/>
         <Password xsi:type="xs:string"/>
+        <Signature xsi:type="xs:string" />
         <Subject xsi:type="xs:string"/>
       </Credentials>
     </RequesterCredentials>
@@ -768,6 +838,7 @@ def successful_authorize_reference_transaction_response
           <InsuranceTotal xsi:type="cc:BasicAmountType" currencyID="USD">0.00</InsuranceTotal>
           <ShippingDiscount xsi:type="cc:BasicAmountType" currencyID="USD">0.00</ShippingDiscount>
           <InsuranceOptionOffered xsi:type="xs:string">false</InsuranceOptionOffered>
+          <NoteText xsi:type="xs:string">This is a test note</NoteText>
           <SellerDetails xsi:type="ebl:SellerDetailsType"/>
           <PaymentRequestID xsi:type="xs:string"/>
           <OrderURL xsi:type="xs:string"/>
@@ -781,6 +852,7 @@ def successful_authorize_reference_transaction_response
           <ShippingOptionName xsi:type=\"xs:string\">default</ShippingOptionName>
         </UserSelectedOptions>
         <CheckoutStatus xsi:type="xs:string">PaymentActionNotInitiated</CheckoutStatus>
+        <PaymentRequestInfo xsi:type="ebl:PaymentRequestInfoType" />
       </GetExpressCheckoutDetailsResponseDetails>
     </GetExpressCheckoutDetailsResponse>
   </SOAP-ENV:Body>
@@ -904,7 +976,7 @@ def successful_authorize_reference_transaction_response
       RESPONSE
     end
 
-      def response_with_duplicate_errors
+    def response_with_duplicate_errors
       <<-RESPONSE
   <?xml version="1.0" encoding="UTF-8"?>
   <SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:SOAP-ENC="http://schemas.xmlsoap.org/soap/encoding/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:cc="urn:ebay:apis:CoreComponentTypes" xmlns:wsu="http://schemas.xmlsoap.org/ws/2002/07/utility" xmlns:saml="urn:oasis:names:tc:SAML:1.0:assertion" xmlns:ds="http://www.w3.org/2000/09/xmldsig#" xmlns:market="urn:ebay:apis:Market" xmlns:auction="urn:ebay:apis:Auction" xmlns:sizeship="urn:ebay:api:PayPalAPI/sizeship.xsd" xmlns:ship="urn:ebay:apis:ship" xmlns:skype="urn:ebay:apis:skype" xmlns:wsse="http://schemas.xmlsoap.org/ws/2002/12/secext" xmlns:ebl="urn:ebay:apis:eBLBaseComponents" xmlns:ns="urn:ebay:api:PayPalAPI">
@@ -993,6 +1065,71 @@ def successful_authorize_reference_transaction_response
         xsi:type="xs:string"></StateOrProvince><CountryName></CountryName><Phone xsi:type="xs:string"></Phone><PostalCode xsi:type="xs:string"></PostalCode><AddressID
         xsi:type="xs:string"></AddressID><AddressOwner xsi:type="ebl:AddressOwnerCodeType">PayPal</AddressOwner><ExternalAddressID xsi:type="xs:string"></ExternalAddressID><AddressStatus
         xsi:type="ebl:AddressStatusCodeType">None</AddressStatus></Address></PayerInfo></BAUpdateResponseDetails></BAUpdateResponse></SOAP-ENV:Body></SOAP-ENV:Envelope>
+      RESPONSE
+    end
+
+    def successful_billing_agreement_details_response
+      <<-RESPONSE
+        <?xml version="1.0" encoding="UTF-8"?><SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/"
+        xmlns:SOAP-ENC="http://schemas.xmlsoap.org/soap/encoding/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:cc="urn:ebay:apis:CoreComponentTypes"
+        xmlns:wsu="http://schemas.xmlsoap.org/ws/2002/07/utility" xmlns:saml="urn:oasis:names:tc:SAML:1.0:assertion"
+        xmlns:ds="http://www.w3.org/2000/09/xmldsig#" xmlns:wsse="http://schemas.xmlsoap.org/ws/2002/12/secext" xmlns:ed="urn:ebay:apis:EnhancedDataTypes"
+        xmlns:ebl="urn:ebay:apis:eBLBaseComponents" xmlns:ns="urn:ebay:api:PayPalAPI"><SOAP-ENV:Header><Security
+        xmlns="http://schemas.xmlsoap.org/ws/2002/12/secext" xsi:type="wsse:SecurityType"></Security><RequesterCredentials
+        xmlns="urn:ebay:api:PayPalAPI" xsi:type="ebl:CustomSecurityHeaderType"><Credentials xmlns="urn:ebay:apis:eBLBaseComponents"
+        xsi:type="ebl:UserIdPasswordType"><Username xsi:type="xs:string"></Username><Password xsi:type="xs:string"></Password><Signature
+        xsi:type="xs:string"></Signature><Subject xsi:type="xs:string"></Subject></Credentials></RequesterCredentials></SOAP-ENV:Header><SOAP-ENV:Body id="_0">
+        <BAUpdateResponse xmlns="urn:ebay:api:PayPalAPI"><Timestamp xmlns="urn:ebay:apis:eBLBaseComponents">2014-05-08T09:22:03Z</Timestamp>
+        <Ack xmlns="urn:ebay:apis:eBLBaseComponents">Success</Ack><CorrelationID xmlns="urn:ebay:apis:eBLBaseComponents">f84ed24f5bd6d</CorrelationID>
+        <Version xmlns="urn:ebay:apis:eBLBaseComponents">72</Version><Build xmlns="urn:ebay:apis:eBLBaseComponents">10918103</Build><BAUpdateResponseDetails
+        xmlns="urn:ebay:apis:eBLBaseComponents" xsi:type="ebl:BAUpdateResponseDetailsType">
+        <BillingAgreementID xsi:type="xs:string">B-6VE21702A47915521</BillingAgreementID><BillingAgreementDescription
+        xsi:type="xs:string">My active merchant custom description</BillingAgreementDescription>
+        <BillingAgreementStatus xsi:type="ebl:MerchantPullStatusCodeType">Active</BillingAgreementStatus><PayerInfo xsi:type="ebl:PayerInfoType"><Payer
+        xsi:type="ebl:EmailAddressType">ivan.rostovsky.xan@gmail.com</Payer><PayerID xsi:type="ebl:UserIDType">SW3AR2WYZ3NJW</PayerID><PayerStatus
+        xsi:type="ebl:PayPalUserStatusCodeType">verified</PayerStatus><PayerName xsi:type="ebl:PersonNameType"><Salutation
+        xmlns="urn:ebay:apis:eBLBaseComponents"></Salutation><FirstName xmlns="urn:ebay:apis:eBLBaseComponents">Ivan</FirstName><MiddleName
+        xmlns="urn:ebay:apis:eBLBaseComponents"></MiddleName><LastName xmlns="urn:ebay:apis:eBLBaseComponents">Rostovsky</LastName>
+        <Suffix xmlns="urn:ebay:apis:eBLBaseComponents"></Suffix></PayerName><PayerCountry xsi:type="ebl:CountryCodeType">US</PayerCountry>
+        <PayerBusiness xsi:type="xs:string"></PayerBusiness><Address xsi:type="ebl:AddressType"><Name xsi:type="xs:string"></Name><Street1
+        xsi:type="xs:string"></Street1><Street2 xsi:type="xs:string"></Street2><CityName xsi:type="xs:string"></CityName><StateOrProvince
+        xsi:type="xs:string"></StateOrProvince><CountryName></CountryName><Phone xsi:type="xs:string"></Phone><PostalCode xsi:type="xs:string">
+        </PostalCode><AddressID xsi:type="xs:string"></AddressID><AddressOwner xsi:type="ebl:AddressOwnerCodeType">PayPal</AddressOwner>
+        <ExternalAddressID xsi:type="xs:string"></ExternalAddressID><AddressStatus xsi:type="ebl:AddressStatusCodeType">None</AddressStatus>
+        </Address></PayerInfo></BAUpdateResponseDetails></BAUpdateResponse></SOAP-ENV:Body></SOAP-ENV:Envelope>
+      RESPONSE
+    end
+
+    def failure_billing_agreement_details_response
+      <<-RESPONSE
+      <?xml version="1.0" encoding="UTF-8"?><SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/"
+      xmlns:SOAP-ENC="http://schemas.xmlsoap.org/soap/encoding/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:cc="urn:ebay:apis:CoreComponentTypes"
+      xmlns:wsu="http://schemas.xmlsoap.org/ws/2002/07/utility" xmlns:saml="urn:oasis:names:tc:SAML:1.0:assertion"
+      xmlns:ds="http://www.w3.org/2000/09/xmldsig#" xmlns:wsse="http://schemas.xmlsoap.org/ws/2002/12/secext"
+      xmlns:ed="urn:ebay:apis:EnhancedDataTypes" xmlns:ebl="urn:ebay:apis:eBLBaseComponents"
+      xmlns:ns="urn:ebay:api:PayPalAPI"><SOAP-ENV:Header><Security xmlns="http://schemas.xmlsoap.org/ws/2002/12/secext"
+      xsi:type="wsse:SecurityType"></Security><RequesterCredentials xmlns="urn:ebay:api:PayPalAPI" xsi:type="ebl:CustomSecurityHeaderType"><Credentials
+      xmlns="urn:ebay:apis:eBLBaseComponents" xsi:type="ebl:UserIdPasswordType"><Username xsi:type="xs:string"></Username><Password
+      xsi:type="xs:string"></Password><Signature xsi:type="xs:string"></Signature><Subject xsi:type="xs:string"></Subject></Credentials>
+      </RequesterCredentials></SOAP-ENV:Header><SOAP-ENV:Body id="_0"><BAUpdateResponse xmlns="urn:ebay:api:PayPalAPI"><Timestamp
+      xmlns="urn:ebay:apis:eBLBaseComponents">2014-05-08T09:30:49Z</Timestamp><Ack xmlns="urn:ebay:apis:eBLBaseComponents">Failure</Ack>
+      <CorrelationID xmlns="urn:ebay:apis:eBLBaseComponents">fb481ac974e22</CorrelationID><Errors xmlns="urn:ebay:apis:eBLBaseComponents"
+      xsi:type="ebl:ErrorType"><ShortMessage xsi:type="xs:string">Billing Agreement Id or transaction Id is not valid</ShortMessage>
+      <LongMessage xsi:type="xs:string">Billing Agreement Id or transaction Id is not valid</LongMessage><ErrorCode xsi:type="xs:token">11451</ErrorCode>
+      <SeverityCode xmlns="urn:ebay:apis:eBLBaseComponents">Error</SeverityCode></Errors><Version xmlns="urn:ebay:apis:eBLBaseComponents">72</Version>
+      <Build xmlns="urn:ebay:apis:eBLBaseComponents">10918103</Build><BAUpdateResponseDetails xmlns="urn:ebay:apis:eBLBaseComponents"
+      xsi:type="ebl:BAUpdateResponseDetailsType"><PayerInfo xsi:type="ebl:PayerInfoType"><Payer xsi:type="ebl:EmailAddressType"></Payer>
+      <PayerID xsi:type="ebl:UserIDType"></PayerID><PayerStatus xsi:type="ebl:PayPalUserStatusCodeType">unverified</PayerStatus><PayerName
+      xsi:type="ebl:PersonNameType"><Salutation xmlns="urn:ebay:apis:eBLBaseComponents"></Salutation><FirstName xmlns="urn:ebay:apis:eBLBaseComponents">
+      </FirstName><MiddleName xmlns="urn:ebay:apis:eBLBaseComponents"></MiddleName><LastName xmlns="urn:ebay:apis:eBLBaseComponents"></LastName><Suffix
+      xmlns="urn:ebay:apis:eBLBaseComponents"></Suffix></PayerName><PayerBusiness xsi:type="xs:string"></PayerBusiness><Address xsi:type="ebl:AddressType">
+      <Name xsi:type="xs:string"></Name><Street1 xsi:type="xs:string"></Street1><Street2 xsi:type="xs:string"></Street2><CityName xsi:type="xs:string">
+      </CityName><StateOrProvince xsi:type="xs:string"></StateOrProvince><CountryName></CountryName><Phone xsi:type="xs:string"></Phone><PostalCode
+      xsi:type="xs:string"></PostalCode><AddressID xsi:type="xs:string"></AddressID><AddressOwner xsi:type="ebl:AddressOwnerCodeType">PayPal</AddressOwner>
+      <ExternalAddressID xsi:type="xs:string"></ExternalAddressID><AddressStatus xsi:type="ebl:AddressStatusCodeType">None</AddressStatus></Address>
+      </PayerInfo></BAUpdateResponseDetails></BAUpdateResponse></SOAP-ENV:Body></SOAP-ENV:Envelope>
       RESPONSE
     end
 end

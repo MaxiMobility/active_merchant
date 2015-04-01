@@ -46,7 +46,6 @@ module ActiveMerchant #:nodoc:
         "N" => "Neither street address nor zip/postal match billing information",
         "O" => "Non-US issuer does not participate",
         "P" => "Postal codes match for international transaction but street address not verified due to incompatible formats",
-        "P" => "Address verification not applicable for this transaction",
         "R" => "Payment gateway was unavailable or timed out",
         "S" => "Address verification service not supported by issuer",
         "U" => "Address information is unavailable",
@@ -195,7 +194,6 @@ module ActiveMerchant #:nodoc:
       end
 
       def purchase(money, creditcard, options = {})
-        post = {}
         authorization = authorize(money, creditcard, options)
         if authorization.success?
           capture(money, authorization.authorization)
@@ -240,7 +238,7 @@ module ActiveMerchant #:nodoc:
       end
 
       def credit(money, identification, options = {})
-        deprecated CREDIT_DEPRECATION_MESSAGE
+        ActiveMerchant.deprecated CREDIT_DEPRECATION_MESSAGE
         refund(money, identification, options)
       end
 
@@ -394,7 +392,7 @@ module ActiveMerchant #:nodoc:
           post[:StreetAddress]  = address[:address1]
           post[:StreetAddress2] = address[:address2]
           post[:City]           = address[:city]
-          post[:State]          = address[:state]
+          post[:State]          = address[:state] || 'XX'
           post[:ZipCode]        = address[:zip]
           post[:Country]        = address[:country]
           post[:Phone]          = address[:phone]
@@ -406,7 +404,7 @@ module ActiveMerchant #:nodoc:
           post[:ShipToStreetAddress]  = address[:address1]
           post[:ShipToStreetAddress2] = address[:address2]
           post[:ShipToCity]           = address[:city]
-          post[:ShipToState]          = address[:state]
+          post[:ShipToState]          = address[:state] || 'XX'
           post[:ShipToZipCode]        = address[:zip]
           post[:ShipToCountry]        = address[:country]
           post[:ShipToPhone]          = address[:phone]

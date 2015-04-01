@@ -1,6 +1,8 @@
 require 'test_helper'
 
 class MonerisTest < Test::Unit::TestCase
+  include CommStub
+
   def setup
     Base.mode = :test
 
@@ -11,7 +13,7 @@ class MonerisTest < Test::Unit::TestCase
 
     @amount = 100
     @credit_card = credit_card('4242424242424242')
-    @options = { :order_id => '1', :customer => '1' }
+    @options = { :order_id => '1', :customer => '1', :billing_address => address}
   end
 
   def test_default_options
@@ -38,7 +40,7 @@ class MonerisTest < Test::Unit::TestCase
   def test_deprecated_credit
     @gateway.expects(:ssl_post).with(anything, regexp_matches(/txn_number>123<\//), anything).returns("")
     @gateway.expects(:parse).returns({})
-    assert_deprecation_warning(Gateway::CREDIT_DEPRECATION_MESSAGE, @gateway) do
+    assert_deprecation_warning(Gateway::CREDIT_DEPRECATION_MESSAGE) do
       @gateway.credit(@amount, "123;456", @options)
     end
   end
@@ -165,6 +167,134 @@ class MonerisTest < Test::Unit::TestCase
     assert_failure response
   end
 
+  def test_cvv_enabled_and_provided
+    gateway = MonerisGateway.new(login: 'store1', password: 'yesguy', cvv_enabled: true)
+
+    @credit_card.verification_value = "452"
+    stub_comms(gateway) do
+      gateway.purchase(@amount, @credit_card, @options)
+    end.check_request do |endpoint, data, headers|
+      assert_match(%r{cvd_indicator>1<}, data)
+      assert_match(%r{cvd_value>452<}, data)
+    end.respond_with(successful_purchase_response)
+  end
+
+  def test_cvv_enabled_but_not_provided
+    gateway = MonerisGateway.new(login: 'store1', password: 'yesguy', cvv_enabled: true)
+
+    @credit_card.verification_value = ""
+    stub_comms(gateway) do
+      gateway.purchase(@amount, @credit_card, @options)
+    end.check_request do |endpoint, data, headers|
+      assert_match(%r{cvd_indicator>0<}, data)
+      assert_no_match(%r{cvd_value>}, data)
+    end.respond_with(successful_purchase_response)
+  end
+
+  def test_cvv_disabled_and_provided
+    @credit_card.verification_value = "452"
+    stub_comms do
+      @gateway.purchase(@amount, @credit_card, @options)
+    end.check_request do |endpoint, data, headers|
+      assert_no_match(%r{cvd_value>}, data)
+      assert_no_match(%r{cvd_indicator>}, data)
+    end.respond_with(successful_purchase_response)
+  end
+
+  def test_cvv_disabled_but_not_provided
+    @credit_card.verification_value = ""
+    stub_comms do
+      @gateway.purchase(@amount, @credit_card, @options)
+    end.check_request do |endpoint, data, headers|
+      assert_no_match(%r{cvd_value>}, data)
+      assert_no_match(%r{cvd_indicator>}, data)
+    end.respond_with(successful_purchase_response)
+  end
+
+  def test_avs_enabled_and_provided
+    gateway = MonerisGateway.new(login: 'store1', password: 'yesguy', avs_enabled: true)
+
+    billing_address = address(address1: "1234 Anystreet", address2: "")
+    stub_comms do
+      gateway.purchase(@amount, @credit_card, billing_address: billing_address, order_id: "1")
+    end.check_request do |endpoint, data, headers|
+      assert_match(%r{avs_street_number>1234<}, data)
+      assert_match(%r{avs_street_name>Anystreet<}, data)
+      assert_match(%r{avs_zipcode>#{billing_address[:zip]}<}, data)
+    end.respond_with(successful_purchase_response_with_avs_result)
+  end
+
+  def test_avs_enabled_but_not_provided
+    gateway = MonerisGateway.new(login: 'store1', password: 'yesguy', avs_enabled: true)
+
+    stub_comms do
+      gateway.purchase(@amount, @credit_card, @options.tap { |x| x.delete(:billing_address) })
+    end.check_request do |endpoint, data, headers|
+      assert_no_match(%r{avs_street_number>}, data)
+      assert_no_match(%r{avs_street_name>}, data)
+      assert_no_match(%r{avs_zipcode>}, data)
+    end.respond_with(successful_purchase_response)
+  end
+
+  def test_avs_disabled_and_provided
+    billing_address = address(address1: "1234 Anystreet", address2: "")
+    stub_comms do
+      @gateway.purchase(@amount, @credit_card, billing_address: billing_address, order_id: "1")
+    end.check_request do |endpoint, data, headers|
+      assert_no_match(%r{avs_street_number>}, data)
+      assert_no_match(%r{avs_street_name>}, data)
+      assert_no_match(%r{avs_zipcode>}, data)
+    end.respond_with(successful_purchase_response_with_avs_result)
+  end
+
+  def test_avs_disabled_and_not_provided
+    stub_comms do
+      @gateway.purchase(@amount, @credit_card, @options.tap { |x| x.delete(:billing_address) })
+    end.check_request do |endpoint, data, headers|
+      assert_no_match(%r{avs_street_number>}, data)
+      assert_no_match(%r{avs_street_name>}, data)
+      assert_no_match(%r{avs_zipcode>}, data)
+    end.respond_with(successful_purchase_response)
+  end
+
+  def test_avs_result_valid_with_address
+    @gateway.expects(:ssl_post).returns(successful_purchase_response_with_avs_result)
+    assert response = @gateway.purchase(100, @credit_card, @options)
+    assert_equal(response.avs_result, {
+      'code' => 'A',
+      'message' => 'Street address matches, but 5-digit and 9-digit postal code do not match.',
+      'street_match' => 'Y',
+      'postal_match' => 'N'
+    })
+  end
+
+  def test_customer_can_be_specified
+    stub_comms do
+      @gateway.purchase(@amount, @credit_card, order_id: "3", customer: "Joe Jones")
+    end.check_request do |endpoint, data, headers|
+      assert_match(%r{cust_id>Joe Jones}, data)
+    end.respond_with(successful_purchase_response)
+  end
+
+  def test_customer_not_specified_card_name_used
+    stub_comms do
+      @gateway.purchase(@amount, @credit_card, order_id: "3")
+    end.check_request do |endpoint, data, headers|
+      assert_match(%r{cust_id>Longbob Longsen}, data)
+    end.respond_with(successful_purchase_response)
+  end
+
+  def test_add_swipe_data_with_creditcard
+    @credit_card.track_data = "Track Data"
+
+    stub_comms do
+      @gateway.purchase(@amount, @credit_card, @options)
+    end.check_request do |endpoint, data, headers|
+      assert_match "<pos_code>00</pos_code>", data
+      assert_match "<track2>Track Data</track2>", data
+    end.respond_with(successful_purchase_response)
+  end
+
   private
 
   def successful_purchase_response
@@ -186,6 +316,36 @@ class MonerisTest < Test::Unit::TestCase
     <CardType>V</CardType>
     <TransID>58-0_3</TransID>
     <TimedOut>false</TimedOut>
+  </receipt>
+</response>
+
+    RESPONSE
+  end
+
+  def successful_purchase_response_with_avs_result
+    <<-RESPONSE
+<?xml version="1.0"?>
+<response>
+  <receipt>
+    <ReceiptId>9c7189ec64b58f541335be1ca6294d09</ReceiptId>
+    <ReferenceNum>660110910011136190</ReferenceNum>
+    <ResponseCode>027</ResponseCode>
+    <ISO>01</ISO>
+    <AuthCode>115497</AuthCode>
+    <TransTime>15:20:51</TransTime>
+    <TransDate>2014-06-18</TransDate>
+    <TransType>00</TransType>
+    <Complete>true</Complete><Message>APPROVED * =</Message>
+    <TransAmount>10.10</TransAmount>
+    <CardType>V</CardType>
+    <TransID>491573-0_9</TransID>
+    <TimedOut>false</TimedOut>
+    <BankTotals>null</BankTotals>
+    <Ticket>null</Ticket>
+    <CorporateCard>false</CorporateCard>
+    <AvsResultCode>A</AvsResultCode>
+    <ITDResponse>null</ITDResponse>
+    <IsVisaDebit>false</IsVisaDebit>
   </receipt>
 </response>
 
@@ -216,7 +376,6 @@ class MonerisTest < Test::Unit::TestCase
 
     RESPONSE
   end
-
 
   def successful_store_response
     <<-RESPONSE
@@ -259,7 +418,6 @@ class MonerisTest < Test::Unit::TestCase
 </response>
     RESPONSE
   end
-
 
   def xml_purchase_fixture
    '<request><store_id>store1</store_id><api_token>yesguy</api_token><purchase><amount>1.01</amount><pan>4242424242424242</pan><expdate>0303</expdate><crypt_type>7</crypt_type><order_id>order1</order_id></purchase></request>'

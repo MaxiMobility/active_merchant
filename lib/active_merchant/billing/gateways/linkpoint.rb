@@ -166,6 +166,8 @@ module ActiveMerchant #:nodoc:
       # :comments               Uh... comments
       #
       def recurring(money, creditcard, options={})
+        ActiveMerchant.deprecated RECURRING_DEPRECATION_MESSAGE
+
         requires!(options, [:periodicity, :bimonthly, :monthly, :biweekly, :weekly, :yearly, :daily], :installments, :order_id )
 
         options.update(
@@ -239,7 +241,7 @@ module ActiveMerchant #:nodoc:
       end
 
       def credit(money, identification, options = {})
-        deprecated CREDIT_DEPRECATION_MESSAGE
+        ActiveMerchant.deprecated CREDIT_DEPRECATION_MESSAGE
         refund(money, identification, options)
       end
 
@@ -277,7 +279,7 @@ module ActiveMerchant #:nodoc:
           if key == :items
             build_items(elem, value)
           else
-            for k, v in params[key]
+            for k, _ in params[key]
               elem.add_element(k.to_s).text = params[key][k].to_s if params[key][k]
             end
           end
@@ -426,17 +428,6 @@ module ActiveMerchant #:nodoc:
         end unless xml.root.nil?
 
         response
-      end
-
-      # Make a ruby type out of the response string
-      def normalize(field)
-        case field
-        when "true"   then true
-        when "false"  then false
-        when ""       then nil
-        when "null"   then nil
-        else field
-        end
       end
 
       def format_creditcard_expiry_year(year)

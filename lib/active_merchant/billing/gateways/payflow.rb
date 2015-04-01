@@ -1,6 +1,6 @@
-require File.dirname(__FILE__) + '/payflow/payflow_common_api'
-require File.dirname(__FILE__) + '/payflow/payflow_response'
-require File.dirname(__FILE__) + '/payflow_express'
+require 'active_merchant/billing/gateways/payflow/payflow_common_api'
+require 'active_merchant/billing/gateways/payflow/payflow_response'
+require 'active_merchant/billing/gateways/payflow_express'
 
 module ActiveMerchant #:nodoc:
   module Billing #:nodoc:
@@ -19,26 +19,33 @@ module ActiveMerchant #:nodoc:
         commit(request, options)
       end
 
-      def purchase(money, credit_card_or_reference, options = {})
-        request = build_sale_or_authorization_request(:purchase, money, credit_card_or_reference, options)
+      def purchase(money, funding_source, options = {})
+        request = build_sale_or_authorization_request(:purchase, money, funding_source, options)
 
         commit(request, options)
       end
 
-      def credit(money, identification_or_credit_card, options = {})
-        if identification_or_credit_card.is_a?(String)
-          deprecated CREDIT_DEPRECATION_MESSAGE
+      def credit(money, funding_source, options = {})
+        if funding_source.is_a?(String)
+          ActiveMerchant.deprecated CREDIT_DEPRECATION_MESSAGE
           # Perform referenced credit
-          refund(money, identification_or_credit_card, options)
-        else
+          refund(money, funding_source, options)
+        elsif card_brand(funding_source) == 'check'
           # Perform non-referenced credit
-          request = build_credit_card_request(:credit, money, identification_or_credit_card, options)
+          request = build_check_request(:credit, money, funding_source, options)
+          commit(request, options)
+        else
+          request = build_credit_card_request(:credit, money, funding_source, options)
           commit(request, options)
         end
       end
 
       def refund(money, reference, options = {})
         commit(build_reference_request(:credit, money, reference, options), options)
+      end
+
+      def verify(payment, options={})
+        authorize(0, payment, options)
       end
 
       # Adds or modifies a recurring Payflow profile.  See the Payflow Pro Recurring Billing Guide for more details:
@@ -54,6 +61,8 @@ module ActiveMerchant #:nodoc:
       # * <tt>payments</tt> - The term, or number of payments that will be made
       # * <tt>comment</tt> - A comment associated with the profile
       def recurring(money, credit_card, options = {})
+        ActiveMerchant.deprecated RECURRING_DEPRECATION_MESSAGE
+
         options[:name] = credit_card.name if options[:name].blank? && credit_card
         request = build_recurring_request(options[:profile_id] ? :modify : :add, money, options) do |xml|
           add_credit_card(xml, credit_card) if credit_card
@@ -62,11 +71,15 @@ module ActiveMerchant #:nodoc:
       end
 
       def cancel_recurring(profile_id)
+        ActiveMerchant.deprecated RECURRING_DEPRECATION_MESSAGE
+
         request = build_recurring_request(:cancel, 0, :profile_id => profile_id)
         commit(request, options.merge(:request_type => :recurring))
       end
 
       def recurring_inquiry(profile_id, options = {})
+        ActiveMerchant.deprecated RECURRING_DEPRECATION_MESSAGE
+
         request = build_recurring_request(:inquiry, nil, options.update( :profile_id => profile_id ))
         commit(request, options.merge(:request_type => :recurring))
       end
@@ -76,11 +89,13 @@ module ActiveMerchant #:nodoc:
       end
 
       private
-      def build_sale_or_authorization_request(action, money, credit_card_or_reference, options)
-        if credit_card_or_reference.is_a?(String)
-          build_reference_sale_or_authorization_request(action, money, credit_card_or_reference, options)
+      def build_sale_or_authorization_request(action, money, funding_source, options)
+        if funding_source.is_a?(String)
+          build_reference_sale_or_authorization_request(action, money, funding_source, options)
+        elsif card_brand(funding_source) == 'check'
+          build_check_request(action, money, funding_source, options)
         else
-          build_credit_card_request(action, money, credit_card_or_reference, options)
+          build_credit_card_request(action, money, funding_source, options)
         end
       end
 
@@ -141,6 +156,31 @@ module ActiveMerchant #:nodoc:
 
             xml.tag! 'Tender' do
               add_credit_card(xml, credit_card)
+            end
+          end
+        end
+        xml.target!
+      end
+
+      def build_check_request(action, money, check, options)
+        xml = Builder::XmlMarkup.new
+        xml.tag! TRANSACTIONS[action] do
+          xml.tag! 'PayData' do
+            xml.tag! 'Invoice' do
+              xml.tag! 'CustIP', options[:ip] unless options[:ip].blank?
+              xml.tag! 'InvNum', options[:order_id].to_s.gsub(/[^\w.]/, '') unless options[:order_id].blank?
+              xml.tag! 'Description', options[:description] unless options[:description].blank?
+              xml.tag! 'BillTo' do
+                xml.tag! 'Name', check.name
+              end
+              xml.tag! 'TotalAmt', amount(money), 'Currency' => options[:currency] || currency(money)
+            end
+            xml.tag! 'Tender' do
+              xml.tag! 'ACH' do
+                xml.tag! 'AcctType', check.account_type == 'checking' ? 'C' : 'S'
+                xml.tag! 'AcctNum', check.account_number
+                xml.tag! 'ABA', check.routing_number
+              end
             end
           end
         end

@@ -57,8 +57,8 @@ class RemoteRealexTest < Test::Unit::TestCase
     assert_not_nil response
     assert_failure response
 
-    assert_equal '504', response.params['result']
-    assert_equal "There is no such merchant id. Please contact realex payments if you continue to experience this problem.", response.message
+    assert_equal '506', response.params['result']
+    assert_match %r{no such}i, response.message
   end
 
   def test_realex_purchase_with_invalid_account
@@ -71,7 +71,7 @@ class RemoteRealexTest < Test::Unit::TestCase
     assert_failure response
 
     assert_equal '506', response.params['result']
-    assert_equal "There is no such merchant account. Please contact realex payments if you continue to experience this problem.", response.message
+    assert_match %r{no such}i, response.message
   end
 
   def test_realex_purchase_declined
@@ -139,20 +139,6 @@ class RemoteRealexTest < Test::Unit::TestCase
 
   end
 
-  def test_realex_ccn_error
-    @visa.number = '5'
-
-    response = @gateway.purchase(@amount, @visa,
-      :order_id => generate_unique_id,
-      :description => 'Test Realex ccn error'
-    )
-    assert_not_nil response
-    assert_failure response
-
-    assert_equal '508', response.params['result']
-    assert_match(/invalid/i, response.message)
-  end
-
   def test_realex_expiry_month_error
     @visa.month = 13
 
@@ -164,7 +150,7 @@ class RemoteRealexTest < Test::Unit::TestCase
     assert_failure response
 
     assert_equal '509', response.params['result']
-    assert_equal "Expiry date invalid", response.message
+    assert_match %r{invalid}i, response.message
   end
 
   def test_realex_expiry_year_error
@@ -193,7 +179,7 @@ class RemoteRealexTest < Test::Unit::TestCase
     assert_failure response
 
     assert_equal '502', response.params['result']
-    assert_match(/mandatory field not present/i, response.message)
+    assert_match(/missing/i, response.message)
   end
 
   def test_cvn
@@ -247,12 +233,12 @@ class RemoteRealexTest < Test::Unit::TestCase
         :country => 'US'
       }
     )
+    assert auth_response.test?
 
     capture_response = @gateway.capture(@amount, auth_response.authorization)
 
     assert_not_nil capture_response
     assert_success capture_response
-    assert capture_response.test?
     assert capture_response.authorization.length > 0
     assert_equal 'Successful', capture_response.message
     assert_match(/Settled Successfully/, capture_response.params['message'])
@@ -269,13 +255,12 @@ class RemoteRealexTest < Test::Unit::TestCase
         :country => 'US'
       }
     )
+    assert purchase_response.test?
 
     void_response = @gateway.void(purchase_response.authorization)
 
     assert_not_nil void_response
     assert_success void_response
-    assert void_response.test?
-    assert void_response.authorization.length > 0
     assert_equal 'Successful', void_response.message
     assert_match(/Voided Successfully/, void_response.params['message'])
   end
@@ -283,7 +268,7 @@ class RemoteRealexTest < Test::Unit::TestCase
   def test_realex_purchase_then_refund
     order_id = generate_unique_id
 
-    gateway_with_refund_password = RealexGateway.new(fixtures(:realex).merge(:rebate_secret => 'refund'))
+    gateway_with_refund_password = RealexGateway.new(fixtures(:realex).merge(:rebate_secret => 'rebate'))
 
     purchase_response = gateway_with_refund_password.purchase(@amount, @visa,
       :order_id => order_id,
@@ -293,6 +278,7 @@ class RemoteRealexTest < Test::Unit::TestCase
         :country => 'US'
       }
     )
+    assert purchase_response.test?
 
     rebate_response = gateway_with_refund_password.refund(@amount, purchase_response.authorization)
 
@@ -302,5 +288,4 @@ class RemoteRealexTest < Test::Unit::TestCase
     assert rebate_response.authorization.length > 0
     assert_equal 'Successful', rebate_response.message
   end
-
 end

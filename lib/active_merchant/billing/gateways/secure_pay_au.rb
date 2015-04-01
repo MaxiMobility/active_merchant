@@ -85,7 +85,7 @@ module ActiveMerchant #:nodoc:
       end
 
       def credit(money, reference, options = {})
-        deprecated CREDIT_DEPRECATION_MESSAGE
+        ActiveMerchant.deprecated CREDIT_DEPRECATION_MESSAGE
         refund(money, reference)
       end
 
@@ -108,8 +108,10 @@ module ActiveMerchant #:nodoc:
       def build_purchase_request(money, credit_card, options)
         xml = Builder::XmlMarkup.new
 
-        xml.tag! 'amount', amount(money)
-        xml.tag! 'currency', options[:currency] || currency(money)
+        currency = options[:currency] || currency(money)
+
+        xml.tag! 'amount', localized_amount(money, currency)
+        xml.tag! 'currency', currency
         xml.tag! 'purchaseOrderNo', options[:order_id].to_s.gsub(/[ ']/, '')
 
         xml.tag! 'CreditCardInfo' do
@@ -140,7 +142,7 @@ module ActiveMerchant #:nodoc:
         xml.instruct!
         xml.tag! 'SecurePayMessage' do
           xml.tag! 'MessageInfo' do
-            xml.tag! 'messageID', ActiveMerchant::Utils.generate_unique_id.slice(0, 30)
+            xml.tag! 'messageID', SecureRandom.hex(15)
             xml.tag! 'messageTimestamp', generate_timestamp
             xml.tag! 'timeoutValue', request_timeout
             xml.tag! 'apiVersion', API_VERSION
@@ -199,7 +201,7 @@ module ActiveMerchant #:nodoc:
         xml.instruct!
         xml.tag! 'SecurePayMessage' do
           xml.tag! 'MessageInfo' do
-            xml.tag! 'messageID', ActiveMerchant::Utils.generate_unique_id.slice(0, 30)
+            xml.tag! 'messageID', SecureRandom.hex(15)
             xml.tag! 'messageTimestamp', generate_timestamp
             xml.tag! 'timeoutValue', request_timeout
             xml.tag! 'apiVersion', PERIODIC_API_VERSION

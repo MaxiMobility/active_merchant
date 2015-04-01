@@ -27,13 +27,37 @@ class FatZebraTest < Test::Unit::TestCase
     assert response.test?
   end
 
+  def test_successful_purchase_with_token
+    @gateway.expects(:ssl_request).with { |method, url, body, headers|
+      body.match '"card_token":"e1q7dbj2"'
+    }.returns(successful_purchase_response)
+
+    assert response = @gateway.purchase(@amount, "e1q7dbj2", @options)
+    assert_success response
+
+    assert_equal '001-P-12345AA', response.authorization
+    assert response.test?
+  end
+
+  def test_successful_purchase_with_token_string
+    @gateway.expects(:ssl_request).with { |method, url, body, headers|
+      body.match '"card_token":"e1q7dbj2"'
+    }.returns(successful_purchase_response)
+
+    assert response = @gateway.purchase(@amount, "e1q7dbj2", @options)
+    assert_success response
+
+    assert_equal '001-P-12345AA', response.authorization
+    assert response.test?
+  end
+
   def test_unsuccessful_request
     @gateway.expects(:ssl_request).returns(failed_purchase_response)
 
     assert response = @gateway.purchase(@amount, @credit_card, @options)
     assert_failure response
     assert response.test?
-    assert_match /Invalid Card Number/, response.message
+    assert_match %r{Invalid Card Number}, response.message
   end
 
   def test_declined_purchase
@@ -42,14 +66,14 @@ class FatZebraTest < Test::Unit::TestCase
     assert response = @gateway.purchase(@amount, @credit_card, @options)
     assert_failure response
     assert response.test?
-    assert_match /Card Declined/, response.message
+    assert_match %r{Card Declined}, response.message
   end
 
   def test_parse_error
     @gateway.expects(:ssl_request).returns("{") # Some invalid JSON
     assert response = @gateway.purchase(@amount, @credit_card, @options)
     assert_failure response
-    assert_match /Invalid JSON response/, response.message
+    assert_match %r{Invalid JSON response}, response.message
   end
 
   def test_request_error
@@ -57,7 +81,7 @@ class FatZebraTest < Test::Unit::TestCase
 
     assert response = @gateway.purchase(@amount, @credit_card, @options)
     assert_failure response
-    assert_match /Card Number is required/, response.message
+    assert_match %r{Card Number is required}, response.message
   end
 
   def test_successful_tokenization
@@ -65,6 +89,7 @@ class FatZebraTest < Test::Unit::TestCase
 
     assert response = @gateway.store(@credit_card)
     assert_success response
+    assert_equal "e1q7dbj2", response.authorization
   end
 
   def test_unsuccessful_tokenization
@@ -129,7 +154,7 @@ class FatZebraTest < Test::Unit::TestCase
           :message => "Card Declined - check with issuer",
       },
       :test => true,
-      :errors => [] 
+      :errors => []
     }.to_json
   end
 

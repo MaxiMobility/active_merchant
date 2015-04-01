@@ -1,4 +1,4 @@
-require File.dirname(__FILE__) + '/paypal_common_api'
+require 'active_merchant/billing/gateways/paypal/paypal_common_api'
 
 module ActiveMerchant #:nodoc:
   module Billing #:nodoc:
@@ -12,7 +12,7 @@ module ActiveMerchant #:nodoc:
       # This transaction creates a recurring payment profile
       # ==== Parameters
       #
-      # * <tt>money</tt> -- The amount to be charged to the customer at each interval as an Integer value in cents.
+      # * <tt>amount</tt> -- The amount to be charged to the customer at each interval as an Integer value in cents.
       # * <tt>credit_card</tt> -- The CreditCard details for the transaction.
       # * <tt>options</tt> -- A hash of parameters.
       #
@@ -23,8 +23,10 @@ module ActiveMerchant #:nodoc:
       # * <tt>:cycles</tt> -- Limit to certain # of cycles (OPTIONAL)
       # * <tt>:start_date</tt> -- When does the charging starts (REQUIRED)
       # * <tt>:description</tt> -- The description to appear in the profile (REQUIRED)
-      
+
       def recurring(amount, credit_card, options = {})
+        ActiveMerchant.deprecated Gateway::RECURRING_DEPRECATION_MESSAGE
+
         options[:credit_card] = credit_card
         options[:amount] = amount
         requires!(options, :description, :start_date, :period, :frequency, :amount)
@@ -34,7 +36,7 @@ module ActiveMerchant #:nodoc:
       # Update a recurring payment's details.
       #
       # This transaction updates an existing Recurring Billing Profile
-      # and the subscription must have already been created previously 
+      # and the subscription must have already been created previously
       # by calling +recurring()+. The ability to change certain
       # details about a recurring payment is dependent on transaction history
       # and the type of plan you're subscribed with paypal. Web Payment Pro
@@ -49,6 +51,8 @@ module ActiveMerchant #:nodoc:
       # * <tt>:profile_id</tt> -- A string containing the <tt>:profile_id</tt>
       # of the recurring payment already in place for a given credit card. (REQUIRED)
       def update_recurring(options={})
+        ActiveMerchant.deprecated Gateway::RECURRING_DEPRECATION_MESSAGE
+
         requires!(options, :profile_id)
         opts = options.dup
         commit 'UpdateRecurringPaymentsProfile', build_change_profile_request(opts.delete(:profile_id), opts)
@@ -65,6 +69,8 @@ module ActiveMerchant #:nodoc:
       # recurring payment already in place for a given credit card. (REQUIRED)
       # * <tt>options</tt> -- A hash with extra info ('note' for ex.)
       def cancel_recurring(profile_id, options = {})
+        ActiveMerchant.deprecated Gateway::RECURRING_DEPRECATION_MESSAGE
+
         raise_error_if_blank('profile_id', profile_id)
         commit 'ManageRecurringPaymentsProfileStatus', build_manage_profile_request(profile_id, 'Cancel', options)
       end
@@ -76,6 +82,8 @@ module ActiveMerchant #:nodoc:
       # * <tt>profile_id</tt> -- A string containing the +profile_id+ of the
       # recurring payment already in place for a given credit card. (REQUIRED)
       def status_recurring(profile_id)
+        ActiveMerchant.deprecated Gateway::RECURRING_DEPRECATION_MESSAGE
+
         raise_error_if_blank('profile_id', profile_id)
         commit 'GetRecurringPaymentsProfileDetails', build_get_profile_details_request(profile_id)
       end
@@ -87,6 +95,8 @@ module ActiveMerchant #:nodoc:
       # * <tt>profile_id</tt> -- A string containing the +profile_id+ of the
       # recurring payment already in place for a given credit card. (REQUIRED)
       def suspend_recurring(profile_id, options = {})
+        ActiveMerchant.deprecated Gateway::RECURRING_DEPRECATION_MESSAGE
+
         raise_error_if_blank('profile_id', profile_id)
         commit 'ManageRecurringPaymentsProfileStatus', build_manage_profile_request(profile_id, 'Suspend', options)
       end
@@ -98,6 +108,8 @@ module ActiveMerchant #:nodoc:
       # * <tt>profile_id</tt> -- A string containing the +profile_id+ of the
       # recurring payment already in place for a given credit card. (REQUIRED)
       def reactivate_recurring(profile_id, options = {})
+        ActiveMerchant.deprecated Gateway::RECURRING_DEPRECATION_MESSAGE
+
         raise_error_if_blank('profile_id', profile_id)
 commit 'ManageRecurringPaymentsProfileStatus', build_manage_profile_request(profile_id, 'Reactivate', options)
       end
@@ -109,6 +121,8 @@ commit 'ManageRecurringPaymentsProfileStatus', build_manage_profile_request(prof
       # * <tt>profile_id</tt> -- A string containing the +profile_id+ of the
       # recurring payment already in place for a given credit card. (REQUIRED)
       def bill_outstanding_amount(profile_id, options = {})
+        ActiveMerchant.deprecated Gateway::RECURRING_DEPRECATION_MESSAGE
+
         raise_error_if_blank('profile_id', profile_id)
         commit 'BillOutstandingAmount', build_bill_outstanding_amount(profile_id, options)
       end

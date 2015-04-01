@@ -1,5 +1,4 @@
 require 'test_helper'
-require 'digest/sha1'
 
 class RealexTest < Test::Unit::TestCase
   class ActiveMerchant::Billing::RealexGateway
@@ -20,8 +19,8 @@ class RealexTest < Test::Unit::TestCase
     )
 
     @gateway_with_account = RealexGateway.new(
-      :login => @merchant_id,
-      :password => @secret,
+      :login => @login,
+      :password => @password,
       :account => 'bill_web_cengal'
     )
 
@@ -55,7 +54,7 @@ class RealexTest < Test::Unit::TestCase
       :login => 'thestore',
       :password => 'mysecret'
     )
-    Time.stubs(:now).returns(Time.parse("2001-04-03 12:32:45"))
+    Time.stubs(:now).returns(Time.new(2001, 4, 3, 12, 32, 45))
     gateway.expects(:ssl_post).with(anything, regexp_matches(/9af7064afd307c9f988e8dfc271f9257f1fc02f6/)).returns(successful_purchase_response)
     gateway.purchase(29900, credit_card('5105105105105100'), :order_id => 'ORD453-11')
   end
@@ -90,13 +89,13 @@ class RealexTest < Test::Unit::TestCase
 
   def test_deprecated_credit
     @gateway.expects(:ssl_post).returns(successful_refund_response)
-    assert_deprecation_warning(Gateway::CREDIT_DEPRECATION_MESSAGE, @gateway) do
+    assert_deprecation_warning(Gateway::CREDIT_DEPRECATION_MESSAGE) do
       assert_success @gateway.credit(@amount, '1234;1234;1234')
     end
   end
 
   def test_supported_countries
-    assert_equal ['IE', 'GB'], RealexGateway.supported_countries
+    assert_equal ['IE', 'GB', "FR", "BE", "NL", "LU", "IT"], RealexGateway.supported_countries
   end
 
   def test_supported_card_types
@@ -287,7 +286,7 @@ SRC
   end
 
   def test_zip_in_shipping_address
-    @gateway.expects(:ssl_post).with(anything, regexp_matches(/<code>BT28XX<\/code>/)).returns(successful_purchase_response)
+    @gateway.expects(:ssl_post).with(anything, regexp_matches(/<code>28\|123<\/code>/)).returns(successful_purchase_response)
 
     options = {
       :order_id => '1',
@@ -298,7 +297,7 @@ SRC
   end
 
   def test_zip_in_billing_address
-    @gateway.expects(:ssl_post).with(anything, regexp_matches(/<code>BT28XX<\/code>/)).returns(successful_purchase_response)
+    @gateway.expects(:ssl_post).with(anything, regexp_matches(/<code>28\|123<\/code>/)).returns(successful_purchase_response)
 
     options = {
       :order_id => '1',

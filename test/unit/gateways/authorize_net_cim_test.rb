@@ -1,6 +1,8 @@
 require 'test_helper'
 
 class AuthorizeNetCimTest < Test::Unit::TestCase
+  include CommStub
+
   def setup
     @gateway = AuthorizeNetCimGateway.new(
       :login => 'X',
@@ -260,7 +262,7 @@ class AuthorizeNetCimTest < Test::Unit::TestCase
     assert_equal response.authorization, response.params['direct_response']['transaction_id']
     assert_equal 'This transaction has been approved.', response.params['direct_response']['message']
     assert_equal 'auth_capture', response.params['direct_response']['transaction_type']
-    assert_equal 'CSYM0K', approval_code = response.params['direct_response']['approval_code']
+    assert_equal 'CSYM0K', response.params['direct_response']['approval_code']
     assert_equal '2163585627', response.params['direct_response']['transaction_id']
 
     assert_equal '1', response.params['direct_response']['response_code']
@@ -415,6 +417,30 @@ class AuthorizeNetCimTest < Test::Unit::TestCase
     assert_nil response.authorization
   end
 
+  def test_should_update_customer_payment_profile_request_with_last_four_digits
+    last_four_credit_card = ActiveMerchant::Billing::CreditCard.new(:number => "4242") #Credit card with only last four digits
+
+    response = stub_comms do
+      @gateway.update_customer_payment_profile(
+        :customer_profile_id => @customer_profile_id,
+        :payment_profile => {
+          :customer_payment_profile_id => @customer_payment_profile_id,
+          :bill_to => address(:address1 => "345 Avenue B",
+                              :address2 => "Apt 101"),
+          :payment => {
+            :credit_card => last_four_credit_card
+          }
+        }
+      )
+    end.check_request do |endpoint, data, headers|
+      assert_match %r{<cardNumber>XXXX4242</cardNumber>}, data
+    end.respond_with(successful_update_customer_payment_profile_response)
+
+    assert_instance_of Response, response
+    assert_success response
+    assert_nil response.authorization
+  end
+
   def test_should_update_customer_shipping_address_request
     @gateway.expects(:ssl_post).returns(successful_update_customer_shipping_address_response)
 
@@ -555,6 +581,41 @@ class AuthorizeNetCimTest < Test::Unit::TestCase
     assert_equal 'This transaction has been approved.', response.params['direct_response']['message']
   end
 
+  def test_should_create_customer_profile_trasnaction_passing_recurring_flag
+    response = stub_comms do
+      @gateway.create_customer_profile_transaction(
+        :transaction => {
+          :customer_profile_id => @customer_profile_id,
+          :customer_payment_profile_id => @customer_payment_profile_id,
+          :type => :auth_capture,
+          :order => {
+            :invoice_number => '1234',
+            :description => 'Test Order Description',
+            :purchase_order_number => '4321'
+          },
+          :amount => @amount,
+          :card_code => '123',
+          :recurring_billing => true
+        }
+      )
+    end.check_request do |endpoint, data, headers|
+      assert_match %r{<recurringBilling>true</recurringBilling>}, data
+    end.respond_with(successful_create_customer_profile_transaction_response(:auth_capture))
+
+    assert_instance_of Response, response
+    assert_success response
+    assert_equal 'M', response.params['direct_response']['card_code'] # M => match
+    assert_equal response.authorization, response.params['direct_response']['transaction_id']
+    assert_equal 'This transaction has been approved.', response.params['direct_response']['message']
+  end
+
+  def test_full_or_masked_card_number
+    assert_equal nil, @gateway.send(:full_or_masked_card_number, nil)
+    assert_equal '', @gateway.send(:full_or_masked_card_number, '')
+    assert_equal '4242424242424242', @gateway.send(:full_or_masked_card_number, @credit_card.number)
+    assert_equal 'XXXX1234', @gateway.send(:full_or_masked_card_number, '1234')
+  end
+
   private
 
   def get_auth_only_response
@@ -573,7 +634,7 @@ class AuthorizeNetCimTest < Test::Unit::TestCase
     assert_nil response.authorization
     assert_equal 'This transaction has been approved.', response.params['direct_response']['message']
     assert_equal 'auth_only', response.params['direct_response']['transaction_type']
-    assert_equal 'Gw4NGI', approval_code = response.params['direct_response']['approval_code']
+    assert_equal 'Gw4NGI', response.params['direct_response']['approval_code']
     return response
   end
 

@@ -153,7 +153,7 @@ module ActiveMerchant
         add_amount(post, money, options)
 
         if identification_or_creditcard.is_a?(String)
-          deprecated CREDIT_DEPRECATION_MESSAGE
+          ActiveMerchant.deprecated CREDIT_DEPRECATION_MESSAGE
           refund(money, identification_or_creditcard, options)
         else
           add_creditcard(post, identification_or_creditcard)
@@ -266,17 +266,6 @@ module ActiveMerchant
       def add_amount(post, money, options)
         post[:card_amount] = amount(money)
         post[:currency] = options[:currency] || currency(money)
-      end
-
-      # Make a ruby type out of the response string
-      def normalize(field)
-        case field
-        when "true"   then true
-        when "false"  then false
-        when ""       then nil
-        when "null"   then nil
-        else field
-        end
       end
 
       def message_from(results)

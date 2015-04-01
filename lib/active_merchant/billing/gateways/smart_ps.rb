@@ -43,6 +43,7 @@ module ActiveMerchant #:nodoc:
         add_currency(post, money, options)
         add_taxes(post, options)
         add_processor(post, options)
+        add_eci(post, options)
         commit('sale', money, post)
       end
 
@@ -76,6 +77,12 @@ module ActiveMerchant #:nodoc:
         commit('refund', money, post)
       end
 
+      def verify(credit_card, options = {})
+        MultiResponse.run(:use_first_response) do |r|
+          r.process { authorize(100, credit_card, options) }
+          r.process(:ignore_result) { void(r.authorization, options) }
+        end
+      end
 
       # Update the values (such as CC expiration) stored at
       # the gateway.  The CC number must be supplied in the
@@ -207,6 +214,10 @@ module ActiveMerchant #:nodoc:
         post[:transactionid] = auth
       end
 
+      def add_eci(post, options)
+        post[:billing_method] = options[:eci] if options[:eci]
+      end
+
       def parse(body)
         results = {}
         body.split(/&/).each do |pair|
@@ -230,8 +241,8 @@ module ActiveMerchant #:nodoc:
       end
 
       def expdate(creditcard)
-        year  = sprintf("%.04i", creditcard.year.to_i)
-        month = sprintf("%.02i", creditcard.month.to_i)
+        year  = sprintf("%.04i", creditcard.year)
+        month = sprintf("%.02i", creditcard.month)
 
         "#{month}#{year[-2..-1]}"
       end

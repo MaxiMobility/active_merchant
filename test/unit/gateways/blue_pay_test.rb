@@ -8,7 +8,6 @@ RSP = {
   :approved_purchase => "AUTH_CODE=GYRUY&PAYMENT_ACCOUNT_MASK=xxxxxxxxxxxx4242&CARD_TYPE=VISA&TRANS_TYPE=SALE&REBID=&STATUS=1&AVS=_&TRANS_ID=100134203767&CVV2=_&MESSAGE=Approved%20Sale"
 }
 
-
 class BluePayTest < Test::Unit::TestCase
   include CommStub
 
@@ -134,7 +133,7 @@ class BluePayTest < Test::Unit::TestCase
 
   def test_deprecated_credit
     @gateway.expects(:ssl_post).returns(successful_purchase_response)
-    assert_deprecation_warning("credit should only be used to credit a payment method", @gateway) do
+    assert_deprecation_warning("credit should only be used to credit a payment method") do
       assert response = @gateway.credit(@amount, '123456789', :card_number => @credit_card.number)
       assert_success response
       assert_equal 'This transaction has been approved', response.message
@@ -163,27 +162,18 @@ class BluePayTest < Test::Unit::TestCase
     end
   end
 
-  def test_response_under_review_by_fraud_service
-    @gateway.expects(:ssl_post).returns(fraud_review_response)
-
-    response = @gateway.purchase(@amount, @credit_card)
-    assert_failure response
-    assert response.fraud_review?
-    assert_equal "Thank you! For security reasons your order is currently being reviewed", response.message
-  end
-
   def test_avs_result
-    @gateway.expects(:ssl_post).returns(fraud_review_response)
+    @gateway.expects(:ssl_post).returns(successful_authorization_response)
 
     response = @gateway.purchase(@amount, @credit_card)
-    assert_equal 'X', response.avs_result['code']
+    assert_equal '_', response.avs_result['code']
   end
 
   def test_cvv_result
-    @gateway.expects(:ssl_post).returns(fraud_review_response)
+    @gateway.expects(:ssl_post).returns(successful_authorization_response)
 
     response = @gateway.purchase(@amount, @credit_card)
-    assert_equal 'M', response.cvv_result['code']
+    assert_equal '_', response.cvv_result['code']
   end
 
   def test_message_from
@@ -191,7 +181,7 @@ class BluePayTest < Test::Unit::TestCase
     def get_msg(query)
       @gateway.send(:parse, query).message
     end
-    assert_equal "No Match", get_msg('STATUS=2&CVV2=N&AVS=A&MESSAGE=FAILURE')
+    assert_equal "CVV does not match", get_msg('STATUS=2&CVV2=N&AVS=A&MESSAGE=FAILURE')
     assert_equal "Street address matches, but 5-digit and 9-digit postal code do not match.",
                    get_msg('STATUS=2&CVV2=M&AVS=A&MESSAGE=FAILURE')
   end
@@ -200,13 +190,15 @@ class BluePayTest < Test::Unit::TestCase
   def test_successful_recurring
     @gateway.expects(:ssl_post).returns(successful_recurring_response)
 
-    response = @gateway.recurring(@amount, @credit_card,
-      :billing_address => address.merge(:first_name => 'Jim', :last_name => 'Smith'),
-      :rebill_start_date => '1 MONTH',
-      :rebill_expression => '14 DAYS',
-      :rebill_cycles     => '24',
-      :rebill_amount     => @amount * 4
-   )
+    response = assert_deprecation_warning(Gateway::RECURRING_DEPRECATION_MESSAGE) do
+      @gateway.recurring(@amount, @credit_card,
+        :billing_address => address.merge(:first_name => 'Jim', :last_name => 'Smith'),
+        :rebill_start_date => '1 MONTH',
+        :rebill_expression => '14 DAYS',
+        :rebill_cycles     => '24',
+        :rebill_amount     => @amount * 4
+     )
+    end
 
     assert_instance_of Response, response
     assert response.success?
@@ -217,7 +209,9 @@ class BluePayTest < Test::Unit::TestCase
   def test_successful_update_recurring
     @gateway.expects(:ssl_post).returns(successful_update_recurring_response)
 
-    response = @gateway.update_recurring(:rebill_id => @rebill_id, :rebill_amount => @amount * 2)
+    response = assert_deprecation_warning(Gateway::RECURRING_DEPRECATION_MESSAGE) do
+      @gateway.update_recurring(:rebill_id => @rebill_id, :rebill_amount => @amount * 2)
+    end
 
     assert_instance_of Response, response
     assert response.success?
@@ -228,7 +222,9 @@ class BluePayTest < Test::Unit::TestCase
   def test_successful_cancel_recurring
     @gateway.expects(:ssl_post).returns(successful_cancel_recurring_response)
 
-    response = @gateway.cancel_recurring(@rebill_id)
+    response = assert_deprecation_warning(Gateway::RECURRING_DEPRECATION_MESSAGE) do
+      @gateway.cancel_recurring(@rebill_id)
+    end
 
     assert_instance_of Response, response
     assert response.success?
@@ -239,7 +235,9 @@ class BluePayTest < Test::Unit::TestCase
   def test_successful_status_recurring
     @gateway.expects(:ssl_post).returns(successful_status_recurring_response)
 
-    response = @gateway.status_recurring(@rebill_id)
+    response = assert_deprecation_warning(Gateway::RECURRING_DEPRECATION_MESSAGE) do
+      @gateway.status_recurring(@rebill_id)
+    end
     assert_instance_of Response, response
     assert response.success?
     assert response.test?
@@ -278,10 +276,6 @@ class BluePayTest < Test::Unit::TestCase
 
   def failed_authorization_response
     "AUTH_CODE=&PAYMENT_ACCOUNT_MASK=xxxxxxxxxxxx4242&CARD_TYPE=VISA&TRANS_TYPE=AUTH&REBID=&STATUS=0&AVS=_&TRANS_ID=100134229728&CVV2=_&MESSAGE=Declined%20Auth"
-  end
-
-  def fraud_review_response
-    "AUTH_CODE=&PAYMENT_ACCOUNT_MASK=xxxxxxxxxxxx4242&CARD_TYPE=VISA&TRANS_TYPE=AUTH&REBID=&STATUS=0&AVS=X&TRANS_ID=100134229728&CVV2=M&MESSAGE=Thank%20you!%20For%20security%20reasons%20your%20order%20is%20currently%20being%20reviewed"
   end
 
   def successful_recurring_response

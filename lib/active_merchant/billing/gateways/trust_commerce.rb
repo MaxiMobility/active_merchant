@@ -197,7 +197,7 @@ module ActiveMerchant #:nodoc:
       end
 
       def credit(money, identification, options = {})
-        deprecated CREDIT_DEPRECATION_MESSAGE
+        ActiveMerchant.deprecated CREDIT_DEPRECATION_MESSAGE
         refund(money, identification, options)
       end
 
@@ -235,6 +235,8 @@ module ActiveMerchant #:nodoc:
       #
       # You can optionally specify how long you want payments to continue using 'payments'
       def recurring(money, creditcard, options = {})
+        ActiveMerchant.deprecated RECURRING_DEPRECATION_MESSAGE
+
         requires!(options, [:periodicity, :bimonthly, :monthly, :biweekly, :weekly, :yearly, :daily] )
 
         cycle = case options[:periodicity]
@@ -297,13 +299,6 @@ module ActiveMerchant #:nodoc:
         else
           add_creditcard(params, source)
         end
-      end
-
-      def expdate(creditcard)
-        year  = sprintf("%.4i", creditcard.year)
-        month = sprintf("%.2i", creditcard.month)
-
-        "#{month}#{year[-2..-1]}"
       end
 
       def add_creditcard(params, creditcard)
@@ -404,7 +399,7 @@ module ActiveMerchant #:nodoc:
       end
 
       def message_from(data)
-        status = case data["status"]
+        case data["status"]
         when "decline"
           return DECLINE_CODES[data["declinetype"]]
         when "baddata"

@@ -86,7 +86,7 @@ module ActiveMerchant #:nodoc:
 
       def credit(money, credit_card_or_authorization, options = {})
         if credit_card_or_authorization.is_a?(String)
-          deprecated CREDIT_DEPRECATION_MESSAGE
+          ActiveMerchant.deprecated CREDIT_DEPRECATION_MESSAGE
           refund(money, credit_card_or_authorization, options)
         else
           sale_authorization_or_credit_template(:credit, money, credit_card_or_authorization, options)
@@ -123,13 +123,6 @@ module ActiveMerchant #:nodoc:
         post[:firstname] = credit_card.first_name
         post[:lastname]  = credit_card.last_name
         post[:cvv]       = credit_card.verification_value
-      end
-
-      def expdate(credit_card)
-        year  = sprintf("%.4i", credit_card.year)
-        month = sprintf("%.2i", credit_card.month)
-
-        "#{month}#{year[-2..-1]}"
       end
 
       def add_addresses(post, options)

@@ -73,16 +73,16 @@ module ActiveMerchant #:nodoc:
     #
     # PayJunction Field       ActiveMerchant Use
     #
-    # dc_logon                provide as :login value to gateway instantation
+    # dc_logon                provide as :login value to gateway instantiation
     # dc_password             provide as :password value to gateway instantiation
     #
     # dc_name                 will be retrieved from credit_card.name
-    # dc_first_name           :first_name on CreditCard object instantation
-    # dc_last_name            :last_name  on CreditCard object instantation
-    # dc_number               :number     on CreditCard object instantation
-    # dc_expiration_month     :month      on CreditCard object instantation
-    # dc_expiration_year      :year       on CreditCard object instantation
-    # dc_verification_number  :verification_value on CC object instantation
+    # dc_first_name           :first_name on CreditCard object instantiation
+    # dc_last_name            :last_name  on CreditCard object instantiation
+    # dc_number               :number     on CreditCard object instantiation
+    # dc_expiration_month     :month      on CreditCard object instantiation
+    # dc_expiration_year      :year       on CreditCard object instantiation
+    # dc_verification_number  :verification_value on CC object instantiation
     #
     # dc_transaction_amount   include as argument to method for your transaction type
     # dc_transaction_type     do nothing, set by your transaction type
@@ -211,7 +211,7 @@ module ActiveMerchant #:nodoc:
       end
 
       def credit(money, authorization, options = {})
-        deprecated CREDIT_DEPRECATION_MESSAGE
+        ActiveMerchant.deprecated CREDIT_DEPRECATION_MESSAGE
         refund(money, authorization, options)
       end
 
@@ -239,6 +239,8 @@ module ActiveMerchant #:nodoc:
       # YYYYMMDD format and can be used to specify when the first charge will be made.
       # If omitted the first charge will be immediate.
       def recurring(money, payment_source, options = {})
+        ActiveMerchant.deprecated RECURRING_DEPRECATION_MESSAGE
+
         requires!(options, [:periodicity, :monthly, :weekly, :daily], :payments)
 
         periodic_type = case options[:periodicity]
@@ -295,11 +297,15 @@ module ActiveMerchant #:nodoc:
 
       # add fields for credit card
       def add_creditcard(params, creditcard)
-        params[:name]                 = creditcard.name
-        params[:number]               = creditcard.number
-        params[:expiration_month]     = creditcard.month
-        params[:expiration_year]      = creditcard.year
-        params[:verification_number]  = creditcard.verification_value if creditcard.verification_value?
+        if creditcard.respond_to?(:track_data) && creditcard.track_data.present?
+          params[:track] = creditcard.track_data
+        else
+          params[:name]                 = creditcard.name
+          params[:number]               = creditcard.number
+          params[:expiration_month]     = creditcard.month
+          params[:expiration_year]      = creditcard.year
+          params[:verification_number]  = creditcard.verification_value if creditcard.verification_value?
+        end
       end
 
       # add field for "instant" transaction, using previous transaction id
@@ -379,18 +385,6 @@ module ActiveMerchant #:nodoc:
         end
         response
       end
-
-      # Make a ruby type out of the response string
-      def normalize(field)
-        case field
-        when "true"   then true
-        when "false"  then false
-        when ""       then nil
-        when "null"   then nil
-        else field
-        end
-      end
-
     end
   end
 end

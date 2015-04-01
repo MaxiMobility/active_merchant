@@ -14,7 +14,7 @@ class PaymillTest < Test::Unit::TestCase
     assert response = @gateway.purchase(@amount, @credit_card)
     assert_success response
     assert_equal "tran_c94ba7df2dae8fd55028df41173c;", response.authorization
-    assert_equal "Transaction approved", response.message
+    assert_equal "General success response.", response.message
     assert_equal 20000, response.params['data']['response_code']
     assert_equal 'pay_b8e6a28fc5e5e1601cdbefbaeb8a', response.params['data']['payment']['id']
     assert_equal '5100', response.params['data']['payment']['last4']
@@ -23,7 +23,7 @@ class PaymillTest < Test::Unit::TestCase
     assert response.test?
   end
 
-  def test_failed_purchase_with_invalid_credit_card
+  def test_failed_store_card_attempting_purchase
     @gateway.expects(:raw_ssl_request).returns(failed_store_response)
     response = @gateway.purchase(@amount, @credit_card)
     assert_failure response
@@ -31,11 +31,33 @@ class PaymillTest < Test::Unit::TestCase
     assert_equal '000.100.201', response.params['transaction']['processing']['return']['code']
   end
 
+  def test_failed_purchase
+    @gateway.stubs(:raw_ssl_request).returns(successful_store_response, failed_purchase_response)
+    response = @gateway.purchase(@amount, @credit_card)
+    assert_failure response
+    assert_equal 'Card declined by authorization system.', response.message
+    assert_equal 50102, response.params['data']['response_code']
+  end
+
   def test_invalid_login
     @gateway.stubs(:raw_ssl_request).returns(successful_store_response, failed_login_response)
     response = @gateway.purchase(@amount, @credit_card)
     assert_failure response
     assert_equal 'Access Denied', response.message
+  end
+
+  def test_empty_server_response
+    @gateway.stubs(:raw_ssl_request).returns(successful_store_response, MockResponse.failed(''))
+    response = @gateway.purchase(@amount, @credit_card)
+    assert_failure response
+    assert_equal "Unable to parse error response: ''", response.message
+  end
+
+  def test_invalid_server_response
+    @gateway.stubs(:raw_ssl_request).returns(successful_store_response, MockResponse.failed('not-json'))
+    response = @gateway.purchase(@amount, @credit_card)
+    assert_failure response
+    assert_equal "Unable to parse error response: 'not-json'", response.message
   end
 
   def test_invalid_login_on_storing_card
@@ -52,10 +74,10 @@ class PaymillTest < Test::Unit::TestCase
     assert_success response
     assert response.test?
 
-    assert_equal "tran_50fb13e10636cf1e59e13018d100;preauth_57c0c87ae3d193f66dc8", response.authorization
-    assert_equal "Transaction approved", response.message
-    assert_equal '5100', response.params['data']['payment']['last4']
-    assert_equal 10001, response.params['data']['response_code']
+    assert_equal "tran_4c612d5293e26d56d986eb89648c;preauth_fdf916cab73b97c4a139", response.authorization
+    assert_equal "General success response.", response.message
+    assert_equal '0004', response.params['data']['payment']['last4']
+    assert_equal 20000, response.params['data']['response_code']
     assert_nil response.avs_result["message"]
     assert_nil response.cvv_result["message"]
 
@@ -64,7 +86,28 @@ class PaymillTest < Test::Unit::TestCase
     assert_success response
     assert response.test?
     assert_equal 20000, response.params['data']['response_code']
-    assert_equal "Transaction approved", response.message
+    assert_equal "General success response.", response.message
+  end
+
+  def test_failed_authorize
+    @gateway.stubs(:raw_ssl_request).returns(successful_store_response, failed_authorize_response)
+    response = @gateway.authorize(@amount, @credit_card)
+    assert_failure response
+    assert_equal 'Card declined by authorization system.', response.message
+    assert_equal 50102, response.params['data']['response_code']
+  end
+
+  def test_successful_authorize_and_void
+    @gateway.stubs(:raw_ssl_request).returns(successful_store_response, successful_authorize_response)
+
+    assert response = @gateway.authorize(@amount, @credit_card)
+    assert_success response
+
+    @gateway.expects(:raw_ssl_request).returns(successful_void_response)
+    response = @gateway.void(response.authorization)
+    assert_success response
+    assert response.test?
+    assert_equal "Transaction approved.", response.message
   end
 
   def test_failed_capture
@@ -88,7 +131,23 @@ class PaymillTest < Test::Unit::TestCase
     assert_success refund
     assert response.test?
 
-    assert_equal 'Transaction approved', refund.message
+    assert_equal 'General success response.', refund.message
+    assert_equal 'tran_89c8728e94273510afa99ab64e45', refund.params['data']['transaction']['id']
+    assert_equal 'refund_d02807f46181c0919016;', refund.authorization
+    assert_equal 20000, refund.params['data']['response_code']
+  end
+
+  def test_successful_refund_response_with_string_response_code
+    @gateway.stubs(:raw_ssl_request).returns(successful_store_response, successful_purchase_response)
+    assert response = @gateway.purchase(@amount, @credit_card)
+    assert_success response
+
+    @gateway.expects(:raw_ssl_request).returns(successful_refund_response_with_string_response_code)
+    assert refund = @gateway.refund(@amount, response.authorization)
+    assert_success refund
+    assert response.test?
+
+    assert_equal 'General success response.', refund.message
     assert_equal 'tran_89c8728e94273510afa99ab64e45', refund.params['data']['transaction']['id']
     assert_equal 'refund_d02807f46181c0919016;', refund.authorization
     assert_equal 20000, refund.params['data']['response_code']
@@ -129,7 +188,7 @@ class PaymillTest < Test::Unit::TestCase
     assert response = @gateway.purchase(@amount, "token")
     assert_success response
     assert_equal "tran_c94ba7df2dae8fd55028df41173c;", response.authorization
-    assert_equal "Transaction approved", response.message
+    assert_equal "General success response.", response.message
     assert_equal 20000, response.params['data']['response_code']
     assert_equal 'pay_b8e6a28fc5e5e1601cdbefbaeb8a', response.params['data']['payment']['id']
     assert_equal '5100', response.params['data']['payment']['last4']
@@ -145,10 +204,10 @@ class PaymillTest < Test::Unit::TestCase
     assert_success response
     assert response.test?
 
-    assert_equal "tran_50fb13e10636cf1e59e13018d100;preauth_57c0c87ae3d193f66dc8", response.authorization
-    assert_equal "Transaction approved", response.message
-    assert_equal '5100', response.params['data']['payment']['last4']
-    assert_equal 10001, response.params['data']['response_code']
+    assert_equal "tran_4c612d5293e26d56d986eb89648c;preauth_fdf916cab73b97c4a139", response.authorization
+    assert_equal "General success response.", response.message
+    assert_equal '0004', response.params['data']['payment']['last4']
+    assert_equal 20000, response.params['data']['response_code']
     assert_nil response.avs_result["message"]
     assert_nil response.cvv_result["message"]
   end
@@ -219,81 +278,244 @@ class PaymillTest < Test::Unit::TestCase
     JSON
   end
 
+  def failed_purchase_response
+    MockResponse.failed <<-JSON
+      {
+        "data":{
+            "id":"tran_a432ce3b113cdd65b48e0d05db88",
+            "amount":"100",
+            "origin_amount":100,
+            "status":"failed",
+            "description":null,
+            "livemode":false,
+            "refunds":null,
+            "currency":"EUR",
+            "created_at":1385054845,
+            "updated_at":1385054845,
+            "response_code":50102,
+            "short_id":null,
+            "is_fraud":false,
+            "invoices":[
+
+            ],
+            "app_id":null,
+            "fees":[
+
+            ],
+            "payment":{
+                "id":"pay_8b75b960574031979a880f98",
+                "type":"creditcard",
+                "client":"client_a69d8452d530ed20b297",
+                "card_type":"mastercard",
+                "country":null,
+                "expire_month":"5",
+                "expire_year":"2020",
+                "card_holder":"",
+                "last4":"5100",
+                "created_at":1385054844,
+                "updated_at":1385054845,
+                "app_id":null
+            },
+            "client":{
+                "id":"client_a69d8452d530ed20b297",
+                "email":null,
+                "description":null,
+                "created_at":1385054845,
+                "updated_at":1385054845,
+                "app_id":null,
+                "payment":[
+
+                ],
+                "subscription":null
+            },
+            "preauthorization":null
+        },
+        "mode":"test"
+      }
+    JSON
+  end
+
   def successful_authorize_response
     MockResponse.succeeded <<-JSON
-      { "data":{
-        "id":"tran_50fb13e10636cf1e59e13018d100",
-        "amount":"100",
-        "origin_amount":100,
-        "status":"preauth",
-        "description":null,
-        "livemode":false,
-        "refunds":null,
-        "currency":"EUR",
-        "created_at":1360787311,
-        "updated_at":1360787311,
-        "response_code":10001,
-        "invoices":[
+      {
+        "data":{
+            "id":"tran_4c612d5293e26d56d986eb89648c",
+            "amount":"100",
+            "origin_amount":100,
+            "status":"preauth",
+            "description":null,
+            "livemode":false,
+            "refunds":null,
+            "currency":"EUR",
+            "created_at":1385054035,
+            "updated_at":1385054035,
+            "response_code":20000,
+            "short_id":"7357.7357.7357",
+            "is_fraud":false,
+            "invoices":[
 
-        ],
-        "payment":{
-          "id":"pay_58e0662ef367027b2356f263e5aa",
-          "type":"creditcard",
-          "client":"client_9e4b7b0d61adc9a9e64e",
-          "card_type":"mastercard",
-          "country":null,
-          "expire_month":9,
-          "expire_year":2014,
-          "card_holder":null,
-          "last4":"5100",
-          "created_at":1360787310,
-          "updated_at":1360787311
+            ],
+            "app_id":null,
+            "fees":[
+
+            ],
+            "payment":{
+                "id":"pay_f9ff269434185e0789106758",
+                "type":"creditcard",
+                "client":"client_d5179e1b6a8f596b19b9",
+                "card_type":"mastercard",
+                "country":null,
+                "expire_month":"9",
+                "expire_year":"2014",
+                "card_holder":"",
+                "last4":"0004",
+                "created_at":1385054033,
+                "updated_at":1385054035,
+                "app_id":null
+            },
+            "client":{
+                "id":"client_d5179e1b6a8f596b19b9",
+                "email":null,
+                "description":null,
+                "created_at":1385054035,
+                "updated_at":1385054035,
+                "app_id":null,
+                "payment":[
+
+                ],
+                "subscription":null
+            },
+            "preauthorization":{
+                "id":"preauth_fdf916cab73b97c4a139",
+                "amount":"100",
+                "currency":"EUR",
+                "status":"closed",
+                "livemode":false,
+                "created_at":1385054035,
+                "updated_at":1385054035,
+                "app_id":null,
+                "payment":{
+                    "id":"pay_f9ff269434185e0789106758",
+                    "type":"creditcard",
+                    "client":"client_d5179e1b6a8f596b19b9",
+                    "card_type":"mastercard",
+                    "country":null,
+                    "expire_month":"9",
+                    "expire_year":"2014",
+                    "card_holder":"",
+                    "last4":"0004",
+                    "created_at":1385054033,
+                    "updated_at":1385054035,
+                    "app_id":null
+                },
+                "client":{
+                    "id":"client_d5179e1b6a8f596b19b9",
+                    "email":null,
+                    "description":null,
+                    "created_at":1385054035,
+                    "updated_at":1385054035,
+                    "app_id":null,
+                    "payment":[
+
+                    ],
+                    "subscription":null
+                }
+            }
         },
-        "client":{
-          "id":"client_9e4b7b0d61adc9a9e64e",
-          "email":null,
+        "mode":"test"
+      }
+    JSON
+  end
+
+  # Paymill returns an HTTP Status code of 200 for an auth failure.
+  def failed_authorize_response
+    MockResponse.succeeded <<-JSON
+      {
+        "data":{
+          "id":"tran_e53189278c7250bfa15c9c580ff2",
+          "amount":"100",
+          "origin_amount":100,
+          "status":"failed",
           "description":null,
-          "created_at":1360787311,
-          "updated_at":1360787311,
-          "payment":[
+          "livemode":false,
+          "refunds":null,
+          "currency":"EUR",
+          "created_at":1385054501,
+          "updated_at":1385054501,
+          "response_code":50102,
+          "short_id":null,
+          "is_fraud":false,
+          "invoices":[
 
           ],
-          "subscription":null
-        },
-        "preauthorization":{
-          "id":"preauth_57c0c87ae3d193f66dc8",
-          "amount":"100",
-          "status":"closed",
-          "livemode":false,
-          "created_at":1360787311,
-          "updated_at":1360787311,
+          "app_id":null,
+          "fees":[
+
+          ],
           "payment":{
-            "id":"pay_58e0662ef367027b2356f263e5aa",
+            "id":"pay_7bc2d73764f38040df934995",
             "type":"creditcard",
-            "client":"client_9e4b7b0d61adc9a9e64e",
+            "client":"client_531e6247ff900e734884",
             "card_type":"mastercard",
             "country":null,
-            "expire_month":9,
-            "expire_year":2014,
-            "card_holder":null,
+            "expire_month":"5",
+            "expire_year":"2020",
+            "card_holder":"",
             "last4":"5100",
-            "created_at":1360787310,
-            "updated_at":1360787311
-          },
-          "client":{
-            "id":"client_9e4b7b0d61adc9a9e64e",
+            "created_at":1385054500,
+            "updated_at":1385054501,
+            "app_id":null
+        },
+        "client":{
+            "id":"client_531e6247ff900e734884",
             "email":null,
             "description":null,
-            "created_at":1360787311,
-            "updated_at":1360787311,
+            "created_at":1385054501,
+            "updated_at":1385054501,
+            "app_id":null,
             "payment":[
 
             ],
             "subscription":null
+        },
+        "preauthorization":{
+            "id":"preauth_cfa6a29b4c679efee58b",
+            "amount":"100",
+            "currency":"EUR",
+            "status":"failed",
+            "livemode":false,
+            "created_at":1385054501,
+            "updated_at":1385054501,
+            "app_id":null,
+            "payment":{
+                "id":"pay_7bc2d73764f38040df934995",
+                "type":"creditcard",
+                "client":"client_531e6247ff900e734884",
+                "card_type":"mastercard",
+                "country":null,
+                "expire_month":"5",
+                "expire_year":"2020",
+                "card_holder":"",
+                "last4":"5100",
+                "created_at":1385054500,
+                "updated_at":1385054501,
+                "app_id":null
+            },
+            "client":{
+                "id":"client_531e6247ff900e734884",
+                "email":null,
+                "description":null,
+                "created_at":1385054501,
+                "updated_at":1385054501,
+                "app_id":null,
+                "payment":[
+
+                ],
+                "subscription":null
+              }
           }
-        }
-      },
-      "mode":"test"
+        },
+        "mode":"test"
       }
     JSON
   end
@@ -378,6 +600,15 @@ class PaymillTest < Test::Unit::TestCase
     JSON
   end
 
+  def successful_void_response
+    MockResponse.succeeded <<-JSON
+      {
+          "data":[],
+          "mode":"test"
+      }
+    JSON
+  end
+
   def successful_refund_response
     MockResponse.succeeded <<-JSON
       {
@@ -402,6 +633,65 @@ class PaymillTest < Test::Unit::TestCase
             "created_at":1360892424,
             "updated_at":1360892424,
             "response_code":20000,
+            "invoices":[
+
+            ],
+            "payment":{
+              "id":"pay_e7f0738e00f3cd57ff00c60f9b72",
+              "type":"creditcard",
+              "client":"client_17c00b38c5b6fc62c3e6",
+              "card_type":"mastercard",
+              "country":null,
+              "expire_month":9,
+              "expire_year":2014,
+              "card_holder":null,
+              "last4":"5100",
+              "created_at":1360892423,
+              "updated_at":1360892424
+            },
+            "client":{
+              "id":"client_17c00b38c5b6fc62c3e6",
+              "email":null,
+              "description":null,
+              "created_at":1360892424,
+              "updated_at":1360892424,
+              "payment":[
+                "pay_e7f0738e00f3cd57ff00c60f9b72"
+              ],
+                "subscription":null
+            },
+            "preauthorization":null
+          }
+        },
+        "mode":"test"
+      }
+    JSON
+  end
+
+  def successful_refund_response_with_string_response_code
+    MockResponse.succeeded <<-JSON
+      {
+        "data":{
+          "id":"refund_d02807f46181c0919016",
+          "amount":"100",
+          "status":"refunded",
+          "description":null,
+          "livemode":false,
+          "created_at":1360892424,
+          "updated_at":1360892424,
+          "response_code":20000,
+          "transaction":{
+            "id":"tran_89c8728e94273510afa99ab64e45",
+            "amount":"000",
+            "origin_amount":100,
+            "status":"refunded",
+            "description":null,
+            "livemode":false,
+            "refunds":null,
+            "currency":"EUR",
+            "created_at":1360892424,
+            "updated_at":1360892424,
+            "response_code":"20000",
             "invoices":[
 
             ],

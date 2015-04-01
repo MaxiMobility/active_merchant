@@ -36,7 +36,9 @@ module ActiveMerchant #:nodoc:
       #
       # money          - The monetary amount of the transaction in cents.
       # payment_method - The CreditCard or the Spreedly payment method token.
-      # options        - A standard ActiveMerchant options hash
+      # options        - A hash of options:
+      #                  :store - Retain the payment method if the purchase
+      #                           succeeds.  Defaults to false.  (optional)
       def purchase(money, payment_method, options = {})
         if payment_method.is_a?(String)
           purchase_with_token(money, payment_method, options)
@@ -52,7 +54,9 @@ module ActiveMerchant #:nodoc:
       #
       # money          - The monetary amount of the transaction in cents.
       # payment_method - The CreditCard or the Spreedly payment method token.
-      # options        - A standard ActiveMerchant options hash
+      # options        - A hash of options:
+      #                  :store - Retain the payment method if the authorize
+      #                           succeeds.  Defaults to false.  (optional)
       def authorize(money, payment_method, options = {})
         if payment_method.is_a?(String)
           authorize_with_token(money, payment_method, options)
@@ -89,7 +93,8 @@ module ActiveMerchant #:nodoc:
       # credit_card    - The CreditCard to store
       # options        - A standard ActiveMerchant options hash
       def store(credit_card, options={})
-        save_card(true, credit_card, options)
+        retain = (options.has_key?(:retain) ? options[:retain] : true)
+        save_card(retain, credit_card, options)
       end
 
       # Public: Redact the CreditCard in Spreedly. This wipes the sensitive
@@ -102,10 +107,11 @@ module ActiveMerchant #:nodoc:
       end
 
       private
+
       def save_card(retain, credit_card, options)
         request = build_xml_request('payment_method') do |doc|
           add_credit_card(doc, credit_card, options)
-          add_data(doc, options)
+          add_extra_options(:data, doc, options)
           doc.retained(true) if retain
         end
 
@@ -114,7 +120,7 @@ module ActiveMerchant #:nodoc:
 
       def purchase_with_token(money, payment_method_token, options)
         request = auth_purchase_request(money, payment_method_token, options)
-        commit("gateways/#{@options[:gateway_token]}/purchase.xml", request)
+        commit("gateways/#{options[:gateway_token] || @options[:gateway_token]}/purchase.xml", request)
       end
 
       def authorize_with_token(money, payment_method_token, options)
@@ -125,18 +131,25 @@ module ActiveMerchant #:nodoc:
       def auth_purchase_request(money, payment_method_token, options)
         build_xml_request('transaction') do |doc|
           add_invoice(doc, money, options)
+          doc.ip(options[:ip])
+          add_extra_options(:gateway_specific_fields, doc, options)
           doc.payment_method_token(payment_method_token)
+          doc.retain_on_success(true) if options[:store]
         end
       end
 
       def add_invoice(doc, money, options)
         doc.amount amount(money)
         doc.currency_code(options[:currency] || currency(money) || default_currency)
+        doc.order_id(options[:order_id])
+        doc.ip(options[:ip])
+        doc.description(options[:description])
       end
 
       def add_credit_card(doc, credit_card, options)
         doc.credit_card do
           doc.number(credit_card.number)
+          doc.verification_value(credit_card.verification_value)
           doc.first_name(credit_card.first_name)
           doc.last_name(credit_card.last_name)
           doc.month(credit_card.month)
@@ -147,20 +160,21 @@ module ActiveMerchant #:nodoc:
           doc.city(options[:billing_address].try(:[], :city))
           doc.state(options[:billing_address].try(:[], :state))
           doc.zip(options[:billing_address].try(:[], :zip))
+          doc.country(options[:billing_address].try(:[], :country))
         end
       end
 
-      def add_data(doc, options)
-        doc.data do
-          data_to_doc(doc, options[:data])
+      def add_extra_options(type, doc, options)
+        doc.send(type) do
+          extra_options_to_doc(doc, options[type])
         end
       end
 
-      def data_to_doc(doc, value)
+      def extra_options_to_doc(doc, value)
         return doc.text value unless value.kind_of? Hash
         value.each do |k, v|
           doc.send(k) do
-            data_to_doc(doc, v)
+            extra_options_to_doc(doc, v)
           end
         end
       end

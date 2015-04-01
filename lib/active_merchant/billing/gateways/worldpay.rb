@@ -6,10 +6,10 @@ module ActiveMerchant #:nodoc:
 
       self.default_currency = 'GBP'
       self.money_format = :cents
-      self.supported_countries = ['HK', 'US', 'GB', 'AU']
-      self.supported_cardtypes = [:visa, :master, :american_express, :discover, :jcb, :maestro, :laser]
+      self.supported_countries = %w(HK GB AU AD BE CH CY CZ DE DK ES FI FR GI GR HU IE IL IT LI LU MC MT NL NO NZ PL PT SE SG SI SM TR UM VA)
+      self.supported_cardtypes = [:visa, :master, :american_express, :discover, :jcb, :maestro, :laser, :switch]
       self.homepage_url = 'http://www.worldpay.com/'
-      self.display_name = 'WorldPay'
+      self.display_name = 'Worldpay Global'
 
       CARD_CODES = {
         'visa'             => 'VISA-SSL',
@@ -19,7 +19,8 @@ module ActiveMerchant #:nodoc:
         'jcb'              => 'JCB-SSL',
         'maestro'          => 'MAESTRO-SSL',
         'laser'            => 'LASER-SSL',
-        'diners_club'      => 'DINERS-SSL'
+        'diners_club'      => 'DINERS-SSL',
+        'switch'           => 'MAESTRO-SSL'
       }
 
       def initialize(options = {})
@@ -59,7 +60,7 @@ module ActiveMerchant #:nodoc:
 
       def refund(money, authorization, options = {})
         MultiResponse.run do |r|
-          r.process{inquire_request(authorization, options, "CAPTURED", "SETTLED")}
+          r.process{inquire_request(authorization, options, "CAPTURED", "SETTLED", "SETTLED_BY_MERCHANT")}
           r.process{refund_request(money, authorization, options)}
         end
       end
@@ -88,8 +89,8 @@ module ActiveMerchant #:nodoc:
 
       def build_request
         xml = Builder::XmlMarkup.new :indent => 2
-        xml.instruct! :xml, :encoding => 'ISO-8859-1'
-        xml.declare! :DOCTYPE, :paymentService, :PUBLIC, "-//WorldPay//DTD WorldPay PaymentService v1//EN", "http://dtd.wp3.rbsworldpay.com/paymentService_v1.dtd"
+        xml.instruct! :xml, :encoding => 'UTF-8'
+        xml.declare! :DOCTYPE, :paymentService, :PUBLIC, "-//WorldPay//DTD WorldPay PaymentService v1//EN", "http://dtd.worldpay.com/paymentService_v1.dtd"
         xml.tag! 'paymentService', 'version' => "1.4", 'merchantCode' => @options[:login] do
           yield xml
         end
@@ -126,6 +127,7 @@ module ActiveMerchant #:nodoc:
                 end
               end
               add_payment_method(xml, money, payment_method, options)
+              add_email(xml, options)
             end
           end
         end
@@ -174,8 +176,14 @@ module ActiveMerchant #:nodoc:
 
       def add_payment_method(xml, amount, payment_method, options)
         if payment_method.is_a?(String)
-          xml.tag! 'payAsOrder', 'orderCode' => payment_method do
-            add_amount(xml, amount, options)
+          if options[:merchant_code]
+            xml.tag! 'payAsOrder', 'orderCode' => payment_method, 'merchantCode' => options[:merchant_code] do
+              add_amount(xml, amount, options)
+            end
+          else
+            xml.tag! 'payAsOrder', 'orderCode' => payment_method do
+              add_amount(xml, amount, options)
+            end
           end
         else
           xml.tag! 'paymentDetails' do
@@ -188,36 +196,56 @@ module ActiveMerchant #:nodoc:
               xml.tag! 'cardHolderName', payment_method.name
               xml.tag! 'cvc', payment_method.verification_value
 
-              add_address(xml, 'cardAddress', (options[:billing_address] || options[:address]))
+              add_address(xml, (options[:billing_address] || options[:address]))
+            end
+            if options[:ip]
+              xml.tag! 'session', 'shopperIPAddress' => options[:ip]
             end
           end
         end
       end
 
-      def add_address(xml, element, address)
-        return if address.nil?
+      def add_email(xml, options)
+        return unless options[:email]
+        xml.tag! 'shopper' do
+          xml.tag! 'shopperEmailAddress', options[:email]
+        end
+      end
 
-        xml.tag! element do
+      def add_address(xml, address)
+        address = address_with_defaults(address)
+
+        xml.tag! 'cardAddress' do
           xml.tag! 'address' do
             if m = /^\s*([^\s]+)\s+(.+)$/.match(address[:name])
               xml.tag! 'firstName', m[1]
               xml.tag! 'lastName', m[2]
             end
-            if m = /^\s*(\d+)\s+(.+)$/.match(address[:address1])
-              xml.tag! 'street', m[2]
-              house_number = m[1]
-            else
-              xml.tag! 'street', address[:address1]
-            end
-            xml.tag! 'houseName', address[:address2] if address[:address2]
-            xml.tag! 'houseNumber', house_number if house_number.present?
-            xml.tag! 'postalCode', (address[:zip].present? ? address[:zip] : "0000")
-            xml.tag! 'city', address[:city] if address[:city]
-            xml.tag! 'state', (address[:state].present? ? address[:state] : 'N/A')
+            xml.tag! 'address1', address[:address1]
+            xml.tag! 'address2', address[:address2] if address[:address2]
+            xml.tag! 'postalCode', address[:zip]
+            xml.tag! 'city', address[:city]
+            xml.tag! 'state', address[:state]
             xml.tag! 'countryCode', address[:country]
             xml.tag! 'telephoneNumber', address[:phone] if address[:phone]
           end
         end
+      end
+
+      def address_with_defaults(address)
+        address ||= {}
+        address.delete_if { |_, v| v.blank? }
+        address.reverse_merge!(default_address)
+      end
+
+      def default_address
+        {
+          address1: 'N/A',
+          zip: '0000',
+          city: 'N/A',
+          state: 'N/A',
+          country: 'US'
+        }
       end
 
       def parse(action, xml)

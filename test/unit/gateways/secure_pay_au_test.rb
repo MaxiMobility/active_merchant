@@ -1,6 +1,8 @@
 require 'test_helper'
 
 class SecurePayAuTest < Test::Unit::TestCase
+  include CommStub
+
   def setup
     @gateway = SecurePayAuGateway.new(
                  :login => 'login',
@@ -46,6 +48,20 @@ class SecurePayAuTest < Test::Unit::TestCase
 
     assert_equal '024259*test**1000', response.authorization
     assert response.test?
+  end
+
+  def test_localized_currency
+    stub_comms do
+      @gateway.purchase(100, @credit_card, @options.merge(:currency => 'CAD'))
+    end.check_request do |endpoint, data, headers|
+      assert_match %r{<amount>100<\/amount>}, data
+    end.respond_with(successful_purchase_response)
+
+    stub_comms do
+      @gateway.purchase(100, @credit_card, @options.merge(:currency => 'JPY'))
+    end.check_request do |endpoint, data, headers|
+      assert_match %r{<amount>1<\/amount>}, data
+    end.respond_with(successful_purchase_response)
   end
 
   def test_failed_purchase
@@ -119,7 +135,7 @@ class SecurePayAuTest < Test::Unit::TestCase
   def test_deprecated_credit
     @gateway.expects(:ssl_post).returns(successful_refund_response)
 
-    assert_deprecation_warning(Gateway::CREDIT_DEPRECATION_MESSAGE, @gateway) do
+    assert_deprecation_warning(Gateway::CREDIT_DEPRECATION_MESSAGE) do
       assert_success @gateway.credit(@amount, "crazy*reference*thingy*100", {})
     end
   end

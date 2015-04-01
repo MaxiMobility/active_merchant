@@ -9,7 +9,7 @@ class RemoteWorldpayTest < Test::Unit::TestCase
     @credit_card = credit_card('4111111111111111')
     @declined_card = credit_card('4111111111111111', :first_name => nil, :last_name => 'REFUSED')
 
-    @options = {:order_id => generate_unique_id}
+    @options = {order_id: generate_unique_id, email: "wow@example.com"}
   end
 
   def test_successful_purchase
@@ -33,6 +33,35 @@ class RemoteWorldpayTest < Test::Unit::TestCase
     assert_success capture
   end
 
+  def test_authorize_and_capture_by_reference
+    assert auth = @gateway.authorize(@amount, @credit_card, @options)
+    assert_success auth
+    assert_equal 'SUCCESS', auth.message
+    assert capture = @gateway.capture(@amount, auth.authorization)
+    assert_success capture
+
+    assert reference = auth.authorization
+    @options[:order_id] = generate_unique_id
+    assert auth = @gateway.authorize(@amount, reference, @options)
+    assert capture = @gateway.capture(@amount, auth.authorization)
+    assert_success capture
+  end
+
+  def test_authorize_and_purchase_by_reference
+    assert auth = @gateway.authorize(@amount, @credit_card, @options)
+    assert_success auth
+    assert_equal 'SUCCESS', auth.message
+    assert capture = @gateway.capture(@amount, auth.authorization)
+    assert_success capture
+
+    assert reference = auth.authorization
+    @options[:order_id] = generate_unique_id
+    assert auth = @gateway.authorize(@amount, reference, @options)
+    @options[:order_id] = generate_unique_id
+    assert capture = @gateway.purchase(@amount, auth.authorization, @options)
+    assert_success capture
+  end
+
   def test_failed_capture
     assert response = @gateway.capture(@amount, 'bogus')
     assert_failure response
@@ -41,6 +70,10 @@ class RemoteWorldpayTest < Test::Unit::TestCase
 
   def test_billing_address
     assert_success @gateway.authorize(@amount, @credit_card, @options.merge(:billing_address => address))
+  end
+
+  def test_ip_address
+    assert_success @gateway.authorize(@amount, @credit_card, @options.merge(ip: "192.18.123.12"))
   end
 
   def test_void
@@ -103,7 +136,7 @@ class RemoteWorldpayTest < Test::Unit::TestCase
 
     assert refund = @gateway.refund(30, response.authorization)
     assert_failure refund
-    assert_equal "A transaction status of 'CAPTURED' or 'SETTLED' is required.", refund.message
+    assert_equal "A transaction status of 'CAPTURED' or 'SETTLED' or 'SETTLED_BY_MERCHANT' is required.", refund.message
   end
 
   def test_refund_nonexistent_transaction

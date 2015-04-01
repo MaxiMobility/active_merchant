@@ -4,7 +4,7 @@ module ActiveMerchant #:nodoc:
       self.live_url = self.test_url = "https://secure.certodirect.com/gateway/process/v2"
 
       self.supported_countries = [
-        "BE", "BG", "CZ", "DK", "DE", "EE", "IE", "EL", "ES", "FR",
+        "BE", "BG", "CZ", "DK", "DE", "EE", "IE", "ES", "FR",
         "IT", "CY", "LV", "LT", "LU", "HU", "MT", "NL", "AT", "PL",
         "PT", "RO", "SI", "SK", "FI", "SE", "GB"
       ]
@@ -101,9 +101,10 @@ module ActiveMerchant #:nodoc:
       # ==== Options
       #
       def recurring(identification, options={})
+        ActiveMerchant.deprecated RECURRING_DEPRECATION_MESSAGE
+
         commit(build_recurring_request(identification, options))
       end
-
 
       private
 
@@ -155,7 +156,7 @@ module ActiveMerchant #:nodoc:
 
       def build_recurring_request(identification, options)
         build_request_xml('Sale') do |xml|
-          xml.tag! 'order' do |xml|
+          xml.tag! 'order' do
             xml.tag!('test', 'true') if test?
             xml.tag! 'initial_order_id', identification, :type => 'integer'
 

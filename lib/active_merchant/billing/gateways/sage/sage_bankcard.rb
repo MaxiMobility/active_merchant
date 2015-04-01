@@ -1,4 +1,4 @@
-require File.dirname(__FILE__) + '/sage_core'
+require 'active_merchant/billing/gateways/sage/sage_core'
 
 module ActiveMerchant #:nodoc:
   module Billing #:nodoc:
@@ -47,7 +47,7 @@ module ActiveMerchant #:nodoc:
       end
 
       def credit(money, credit_card, options = {})
-        deprecated CREDIT_DEPRECATION_MESSAGE
+        ActiveMerchant.deprecated CREDIT_DEPRECATION_MESSAGE
         refund(money, credit_card, options)
       end
 
@@ -59,17 +59,11 @@ module ActiveMerchant #:nodoc:
       end
 
       private
-      def exp_date(credit_card)
-        year  = sprintf("%.4i", credit_card.year)
-        month = sprintf("%.2i", credit_card.month)
-
-        "#{month}#{year[-2..-1]}"
-      end
 
       def add_credit_card(post, credit_card)
         post[:C_name]       = credit_card.name
         post[:C_cardnumber] = credit_card.number
-        post[:C_exp]        = exp_date(credit_card)
+        post[:C_exp]        = expdate(credit_card)
         post[:C_cvv]        = credit_card.verification_value if credit_card.verification_value?
       end
 

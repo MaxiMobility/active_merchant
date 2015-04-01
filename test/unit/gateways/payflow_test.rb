@@ -1,6 +1,8 @@
 require 'test_helper'
 
 class PayflowTest < Test::Unit::TestCase
+  include CommStub
+
   def setup
     Base.mode = :test
 
@@ -12,6 +14,7 @@ class PayflowTest < Test::Unit::TestCase
     @amount = 100
     @credit_card = credit_card('4242424242424242')
     @options = { :billing_address => address.merge(:first_name => "Longbob", :last_name => "Longsen") }
+    @check = check( :name => 'Jim Smith' )
   end
 
   def test_successful_authorization
@@ -22,6 +25,7 @@ class PayflowTest < Test::Unit::TestCase
     assert_success response
     assert response.test?
     assert_equal "VUJN1A6E11D9", response.authorization
+    refute response.fraud_review?
   end
 
   def test_failed_authorization
@@ -33,6 +37,15 @@ class PayflowTest < Test::Unit::TestCase
     assert response.test?
   end
 
+  def test_successful_purchase_with_fraud_review
+    @gateway.stubs(:ssl_post).returns(successful_purchase_with_fraud_review_response)
+
+    assert response = @gateway.purchase(@amount, @credit_card, @options)
+    assert_success response
+    assert_equal "126", response.params["result"]
+    assert response.fraud_review?
+  end
+
   def test_credit
     @gateway.expects(:ssl_post).with(anything, regexp_matches(/<CardNum>#{@credit_card.number}<\//), anything).returns("")
     @gateway.expects(:parse).returns({})
@@ -42,7 +55,7 @@ class PayflowTest < Test::Unit::TestCase
   def test_deprecated_credit
     @gateway.expects(:ssl_post).with(anything, regexp_matches(/<PNRef>transaction_id<\//), anything).returns("")
     @gateway.expects(:parse).returns({})
-    assert_deprecation_warning(Gateway::CREDIT_DEPRECATION_MESSAGE, @gateway) do
+    assert_deprecation_warning(Gateway::CREDIT_DEPRECATION_MESSAGE) do
       @gateway.credit(@amount, "transaction_id", @options)
     end
   end
@@ -78,6 +91,18 @@ class PayflowTest < Test::Unit::TestCase
     assert_equal 'M', response.cvv_result['code']
   end
 
+  def test_ach_purchase
+    @gateway.expects(:ssl_post).with(anything, regexp_matches(/<AcctNum>#{@check.account_number}<\//), anything).returns("")
+    @gateway.expects(:parse).returns({})
+    @gateway.purchase(@amount, @check)
+  end
+
+  def test_ach_credit
+    @gateway.expects(:ssl_post).with(anything, regexp_matches(/<AcctNum>#{@check.account_number}<\//), anything).returns("")
+    @gateway.expects(:parse).returns({})
+    @gateway.credit(@amount, @check)
+  end
+
   def test_using_test_mode
     assert @gateway.test?
   end
@@ -102,7 +127,7 @@ class PayflowTest < Test::Unit::TestCase
       :password => 'PASSWORD'
     )
 
-    assert !gateway.test?
+    refute gateway.test?
   end
 
   def test_partner_class_accessor
@@ -147,40 +172,65 @@ class PayflowTest < Test::Unit::TestCase
     assert_equal [:visa, :master, :american_express, :jcb, :discover, :diners_club], PayflowGateway.supported_cardtypes
   end
 
+  def test_successful_verify
+    response = stub_comms(@gateway) do
+      @gateway.verify(@credit_card, @options)
+    end.respond_with(successful_authorization_response)
+    assert_success response
+  end
+
+  def test_unsuccessful_verify
+    response = stub_comms(@gateway) do
+      @gateway.verify(@credit_card, @options)
+    end.respond_with(failed_authorization_response)
+    assert_failure response
+    assert_equal "Declined", response.message
+  end
+
   def test_initial_recurring_transaction_missing_parameters
     assert_raises ArgumentError do
-      response = @gateway.recurring(@amount, @credit_card,
-        :periodicity => :monthly,
-        :initial_transaction => { }
-      )
+      assert_deprecation_warning(Gateway::RECURRING_DEPRECATION_MESSAGE) do
+        @gateway.recurring(@amount, @credit_card,
+          :periodicity => :monthly,
+          :initial_transaction => { }
+        )
+      end
     end
   end
 
   def test_initial_purchase_missing_amount
     assert_raises ArgumentError do
-      response = @gateway.recurring(@amount, @credit_card,
-        :periodicity => :monthly,
-        :initial_transaction => { :amount => :purchase }
-      )
+      assert_deprecation_warning(Gateway::RECURRING_DEPRECATION_MESSAGE) do
+        @gateway.recurring(@amount, @credit_card,
+          :periodicity => :monthly,
+          :initial_transaction => { :amount => :purchase }
+        )
+      end
     end
   end
 
   def test_recurring_add_action_missing_parameters
     assert_raises ArgumentError do
-      response = @gateway.recurring(@amount, @credit_card)
+      assert_deprecation_warning(Gateway::RECURRING_DEPRECATION_MESSAGE) do
+        @gateway.recurring(@amount, @credit_card)
+      end
     end
   end
 
   def test_recurring_modify_action_missing_parameters
     assert_raises ArgumentError do
-      response = @gateway.recurring(@amount, nil)
+      assert_deprecation_warning(Gateway::RECURRING_DEPRECATION_MESSAGE) do
+        @gateway.recurring(@amount, nil)
+      end
     end
   end
 
   def test_successful_recurring_action
     @gateway.stubs(:ssl_post).returns(successful_recurring_response)
 
-    response = @gateway.recurring(@amount, @credit_card, :periodicity => :monthly)
+    response = assert_deprecation_warning(Gateway::RECURRING_DEPRECATION_MESSAGE) do
+      @gateway.recurring(@amount, @credit_card, :periodicity => :monthly)
+    end
 
     assert_instance_of PayflowResponse, response
     assert_success response
@@ -192,7 +242,9 @@ class PayflowTest < Test::Unit::TestCase
   def test_successful_recurring_modify_action
     @gateway.stubs(:ssl_post).returns(successful_recurring_response)
 
-    response = @gateway.recurring(@amount, nil, :profile_id => "RT0000000009", :periodicity => :monthly)
+    response = assert_deprecation_warning(Gateway::RECURRING_DEPRECATION_MESSAGE) do
+      @gateway.recurring(@amount, nil, :profile_id => "RT0000000009", :periodicity => :monthly)
+    end
 
     assert_instance_of PayflowResponse, response
     assert_success response
@@ -204,7 +256,9 @@ class PayflowTest < Test::Unit::TestCase
   def test_successful_recurring_modify_action_with_retry_num_days
     @gateway.stubs(:ssl_post).returns(successful_recurring_response)
 
-    response = @gateway.recurring(@amount, nil, :profile_id => "RT0000000009", :retry_num_days => 3, :periodicity => :monthly)
+    response = assert_deprecation_warning(Gateway::RECURRING_DEPRECATION_MESSAGE) do
+      @gateway.recurring(@amount, nil, :profile_id => "RT0000000009", :retry_num_days => 3, :periodicity => :monthly)
+    end
 
     assert_instance_of PayflowResponse, response
     assert_success response
@@ -216,7 +270,9 @@ class PayflowTest < Test::Unit::TestCase
   def test_falied_recurring_modify_action_with_starting_at_in_the_past
     @gateway.stubs(:ssl_post).returns(start_date_error_recurring_response)
 
-    response = @gateway.recurring(@amount, nil, :profile_id => "RT0000000009", :starting_at => Date.yesterday, :periodicity => :monthly)
+    response = assert_deprecation_warning(Gateway::RECURRING_DEPRECATION_MESSAGE) do
+      @gateway.recurring(@amount, nil, :profile_id => "RT0000000009", :starting_at => Date.yesterday, :periodicity => :monthly)
+    end
 
     assert_instance_of PayflowResponse, response
     assert_success response
@@ -229,7 +285,9 @@ class PayflowTest < Test::Unit::TestCase
   def test_falied_recurring_modify_action_with_starting_at_missing_and_changed_periodicity
     @gateway.stubs(:ssl_post).returns(start_date_missing_recurring_response)
 
-    response = @gateway.recurring(@amount, nil, :profile_id => "RT0000000009", :periodicity => :yearly)
+    response = assert_deprecation_warning(Gateway::RECURRING_DEPRECATION_MESSAGE) do
+      @gateway.recurring(@amount, nil, :profile_id => "RT0000000009", :periodicity => :yearly)
+    end
 
     assert_instance_of PayflowResponse, response
     assert_success response
@@ -242,7 +300,9 @@ class PayflowTest < Test::Unit::TestCase
   def test_recurring_profile_payment_history_inquiry
     @gateway.stubs(:ssl_post).returns(successful_payment_history_recurring_response)
 
-    response = @gateway.recurring_inquiry('RT0000000009', :history => true)
+    response = assert_deprecation_warning(Gateway::RECURRING_DEPRECATION_MESSAGE) do
+      @gateway.recurring_inquiry('RT0000000009', :history => true)
+    end
     assert_equal 1, response.payment_history.size
     assert_equal '1', response.payment_history.first['payment_num']
     assert_equal '7.25', response.payment_history.first['amt']
@@ -285,7 +345,7 @@ class PayflowTest < Test::Unit::TestCase
     assert_equal timeout, headers['X-VPS-Client-Timeout']
 
     xml = @gateway.send(:build_request, 'dummy body')
-    assert_match /Timeout="#{timeout}"/, xml
+    assert_match %r{Timeout="#{timeout}"}, xml
   end
 
   def test_name_field_are_included_instead_of_first_and_last
@@ -294,6 +354,16 @@ class PayflowTest < Test::Unit::TestCase
     end
     response = @gateway.authorize(@amount, @credit_card, @options)
     assert_success response
+  end
+
+  def test_passed_in_verbosity
+    assert_nil PayflowGateway.new(:login => 'test', :password => 'test').options[:verbosity]
+    gateway = PayflowGateway.new(:login => 'test', :password => 'test', :verbosity => 'HIGH')
+    assert_equal 'HIGH', gateway.options[:verbosity]
+    @gateway.expects(:ssl_post).returns(verbose_transaction_response)
+    response = @gateway.purchase(100, @credit_card, @options)
+    assert_success response
+    assert_equal '2014-06-25 09:33:41', response.params['transaction_time']
   end
 
   private
@@ -397,6 +467,46 @@ class PayflowTest < Test::Unit::TestCase
     XML
   end
 
+  def successful_purchase_with_fraud_review_response
+    <<-XML
+      <XMLPayResponse  xmlns="http://www.paypal.com/XMLPay">
+        <ResponseData>
+          <Vendor>spreedly</Vendor>
+          <Partner>paypal</Partner>
+          <TransactionResults>
+            <TransactionResult>
+              <Result>126</Result>
+              <ProcessorResult>
+                <HostCode>A</HostCode>
+              </ProcessorResult>
+              <FraudPreprocessResult>
+                <Message>Review HighRiskBinCheck</Message>
+                <XMLData>
+                  <triggeredRules>
+                    <rule num="1">
+                      <ruleId>13</ruleId>
+                      <ruleID>13</ruleID>
+                      <ruleAlias>HighRiskBinCheck</ruleAlias>
+                      <ruleDescription>BIN Risk List Match</ruleDescription>
+                      <action>R</action>
+                      <triggeredMessage>The card number is in a high risk bin list</triggeredMessage>
+                    </rule>
+                  </triggeredRules>
+                </XMLData>
+              </FraudPreprocessResult>
+              <FraudPostprocessResult>
+                <Message>Review</Message>
+              </FraudPostprocessResult>
+              <Message>Under review by Fraud Service</Message>
+              <PNRef>A71A7B022DC0</PNRef>
+              <AuthCode>907PNI</AuthCode>
+            </TransactionResult>
+          </TransactionResults>
+        </ResponseData>
+      </XMLPayResponse>
+    XML
+  end
+
   def successful_duplicate_response
     <<-XML
 <?xml version="1.0"?>
@@ -425,6 +535,54 @@ class PayflowTest < Test::Unit::TestCase
 			</TransactionResult>
 		</TransactionResults>
 	</ResponseData>
+</XMLPayResponse>
+    XML
+  end
+
+  def verbose_transaction_response
+    <<-XML
+<?xml version="1.0" encoding="UTF-8"?>
+<XMLPayResponse  xmlns="http://www.paypal.com/XMLPay">
+  <ResponseData>
+    <Vendor>ActiveMerchant</Vendor>
+    <Partner>paypal</Partner>
+    <TransactionResults>
+      <TransactionResult>
+        <Result>0</Result>
+        <ProcessorResult>
+          <AVSResult>U</AVSResult>
+          <CVResult>M</CVResult>
+          <HostCode>A</HostCode>
+        </ProcessorResult>
+        <FraudPreprocessResult>
+          <Message>No Rules Triggered</Message>
+        </FraudPreprocessResult>
+        <FraudPostprocessResult>
+          <Message>No Rules Triggered</Message>
+        </FraudPostprocessResult>
+        <IAVSResult>X</IAVSResult>
+        <AVSResult>
+          <StreetMatch>Service Not Available</StreetMatch>
+          <ZipMatch>Service Not Available</ZipMatch>
+        </AVSResult>
+        <CVResult>Match</CVResult>
+        <Message>Approved</Message>
+        <PNRef>A70A6C93C4C8</PNRef>
+        <AuthCode>242PNI</AuthCode>
+        <Amount>1.00</Amount>
+        <VisaCardLevel>12</VisaCardLevel>
+        <TransactionTime>2014-06-25 09:33:41</TransactionTime>
+        <Account>4242</Account>
+        <ExpirationDate>0714</ExpirationDate>
+        <CardType>0</CardType>
+        <PayPalResult>
+          <FeeAmount>0</FeeAmount>
+          <Name>Longbob</Name>
+          <Lastname>Longsen</Lastname>
+        </PayPalResult>
+      </TransactionResult>
+    </TransactionResults>
+  </ResponseData>
 </XMLPayResponse>
     XML
   end

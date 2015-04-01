@@ -100,11 +100,11 @@ class AuthorizeNetCimTest < Test::Unit::TestCase
     assert response.test?
     assert_success response
     assert_equal response.authorization, response.params['direct_response']['transaction_id']
-    assert_equal "This transaction has been approved.", response.params['direct_response']['message']
+    assert_match %r{(?:(TESTMODE) )?This transaction has been approved.}, response.params['direct_response']['message']
     assert response.params['direct_response']['approval_code'] =~ /\w{6}/
     assert_equal "auth_only", response.params['direct_response']['transaction_type']
     assert_equal "100.00", response.params['direct_response']['amount']
-    assert_match /\d+/, response.params['direct_response']['transaction_id']
+    assert_match %r{\d+}, response.params['direct_response']['transaction_id']
 
     approval_code = response.params['direct_response']['approval_code']
 
@@ -123,7 +123,7 @@ class AuthorizeNetCimTest < Test::Unit::TestCase
     assert response.test?
     assert_success response
     assert_equal response.authorization, response.params['direct_response']['transaction_id']
-    assert_equal "This transaction has been approved.", response.params['direct_response']['message']
+    assert_match %r{(?:(TESTMODE) )?This transaction has been approved.}, response.params['direct_response']['message']
     assert_equal approval_code, response.params['direct_response']['approval_code']
     assert_equal "capture_only", response.params['direct_response']['transaction_type']
     assert_equal "100.00", response.params['direct_response']['amount']
@@ -146,6 +146,7 @@ class AuthorizeNetCimTest < Test::Unit::TestCase
           :description => 'Test Order Description',
           :purchase_order_number => '4321'
         },
+        :recurring_billing => true,
         :card_code => '900', # authorize.net says this is a matching CVV
         :amount => @amount
       }
@@ -154,7 +155,7 @@ class AuthorizeNetCimTest < Test::Unit::TestCase
     assert response.test?
     assert_success response
     assert_equal response.authorization, response.params['direct_response']['transaction_id']
-    assert_equal "This transaction has been approved.", response.params['direct_response']['message']
+    assert_match %r{(?:(TESTMODE) )?This transaction has been approved.}, response.params['direct_response']['message']
     assert response.params['direct_response']['approval_code'] =~ /\w{6}/
     assert_equal "auth_capture", response.params['direct_response']['transaction_type']
     assert_equal "100.00", response.params['direct_response']['amount']
@@ -420,6 +421,52 @@ class AuthorizeNetCimTest < Test::Unit::TestCase
     assert_equal "Frank", response.params['payment_profile']['bill_to']['first_name'], "The billing address should contain the first name we passed in: Frank"
   end
 
+  def test_successful_update_customer_payment_profile_request_with_credit_card_last_four
+    # Create a new Customer Profile with Payment Profile
+    assert response = @gateway.create_customer_profile(@options)
+    @customer_profile_id = response.authorization
+
+    # Get the customerPaymentProfileId
+    assert response = @gateway.get_customer_profile(:customer_profile_id => @customer_profile_id)
+    assert customer_payment_profile_id = response.params['profile']['payment_profiles']['customer_payment_profile_id']
+
+    # Get the customerPaymentProfile
+    assert response = @gateway.get_customer_payment_profile(
+      :customer_profile_id => @customer_profile_id,
+      :customer_payment_profile_id => customer_payment_profile_id
+    )
+
+    # Card number last 4 digits is 4242
+    assert_equal "XXXX4242", response.params['payment_profile']['payment']['credit_card']['card_number'], "The card number should contain the last 4 digits of the card we passed in 4242"
+
+    new_billing_address = response.params['payment_profile']['bill_to']
+    new_billing_address.update(:first_name => 'Frank', :last_name => 'Brown')
+
+    # Initialize credit card with only last 4 digits as the number
+    last_four_credit_card = ActiveMerchant::Billing::CreditCard.new(:number => "4242") #Credit card with only last four digits
+
+    # Update only the billing address with a card with the last 4 digits and expiration date
+    assert response = @gateway.update_customer_payment_profile(
+      :customer_profile_id => @customer_profile_id,
+      :payment_profile => {
+        :customer_payment_profile_id => customer_payment_profile_id,
+        :bill_to => new_billing_address,
+        :payment => {
+          :credit_card => last_four_credit_card
+        }
+      }
+    )
+
+    # Get the updated payment profile
+    assert response = @gateway.get_customer_payment_profile(
+      :customer_profile_id => @customer_profile_id,
+      :customer_payment_profile_id => customer_payment_profile_id
+    )
+
+    # Show that the billing address on the payment profile was updated
+    assert_equal "Frank", response.params['payment_profile']['bill_to']['first_name'], "The billing address should contain the first name we passed in: Frank"
+  end
+
   def test_successful_update_customer_shipping_address_request
     # Create a new Customer Profile with Shipping Address
     assert response = @gateway.create_customer_profile(@options)
@@ -484,7 +531,7 @@ class AuthorizeNetCimTest < Test::Unit::TestCase
     assert response.test?
     assert_success response
     assert_equal response.authorization, response.params['direct_response']['transaction_id']
-    assert_equal "This transaction has been approved.", response.params['direct_response']['message']
+    assert_match %r{(?:(TESTMODE) )?This transaction has been approved.}, response.params['direct_response']['message']
   end
 
   def test_validate_customer_payment_profile_request_live_requires_billing_address
@@ -725,7 +772,7 @@ class AuthorizeNetCimTest < Test::Unit::TestCase
     assert response.test?
     assert_success response
     assert_equal response.authorization, response.params['direct_response']['transaction_id']
-    assert_equal "This transaction has been approved.", response.params['direct_response']['message']
+    assert_match %r{(?:(TESTMODE) )?This transaction has been approved.}, response.params['direct_response']['message']
     assert response.params['direct_response']['approval_code'] =~ /\w{6}/
     assert_equal "auth_capture", response.params['direct_response']['transaction_type']
     assert_equal "100.00", response.params['direct_response']['amount']

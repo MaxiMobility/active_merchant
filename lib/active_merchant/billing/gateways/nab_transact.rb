@@ -16,33 +16,25 @@ module ActiveMerchant #:nodoc:
       self.live_periodic_url = 'https://transact.nab.com.au/xmlapi/periodic'
 
       self.supported_countries = ['AU']
-
-      # The card types supported by the payment gateway
-      # Note that support for Diners, Amex, and JCB require extra
-      # steps in setting up your account, as detailed in the NAB Transact API
       self.supported_cardtypes = [:visa, :master, :american_express, :diners_club, :jcb]
 
       self.homepage_url = 'http://transact.nab.com.au'
       self.display_name = 'NAB Transact'
-
-      cattr_accessor :request_timeout
-      self.request_timeout = 60
-
       self.money_format = :cents
       self.default_currency = 'AUD'
 
       #Transactions currently accepted by NAB Transact XML API
       TRANSACTIONS = {
-        :purchase => 0,         #Standard Payment
-        :refund => 4,           #Refund
-        :void => 6,             #Client Reversal (Void)
-        :authorization => 10,   #Preauthorise
-        :capture => 11          #Preauthorise Complete (Advice)
+        :purchase => 0,           #Standard Payment
+        :refund => 4,             #Refund
+        :void => 6,               #Client Reversal (Void)
+        :unmatched_refund => 666, #Unmatched Refund
+        :authorization => 10,     #Preauthorise
+        :capture => 11            #Preauthorise Complete (Advice)
       }
 
       PERIODIC_TYPES = {
         :addcrn    => 5,
-        :editcrn   => 5,
         :deletecrn => 5,
         :trigger   => 8
       }
@@ -57,27 +49,34 @@ module ActiveMerchant #:nodoc:
 
       def purchase(money, credit_card_or_stored_id, options = {})
         if credit_card_or_stored_id.respond_to?(:number)
-          #Credit card for instant payment
           commit :purchase, build_purchase_request(money, credit_card_or_stored_id, options)
         else
-          #Triggered payment for an existing stored credit card
-          options[:billing_id] = credit_card_or_stored_id.to_s
-          commit_periodic build_periodic_item(:trigger, money, nil, options)
+          commit_periodic(:trigger, build_purchase_using_stored_card_request(money, credit_card_or_stored_id, options))
         end
       end
 
-      def refund(money, authorization, options = {})
-        commit :refund, build_reference_request(money, authorization)
+      def credit(money, credit_card, options = {})
+        commit :unmatched_refund, build_purchase_request(money, credit_card, options)
       end
 
-      def store(creditcard, options = {})
-        requires!(options, :billing_id, :amount)
-        commit_periodic(build_periodic_item(:addcrn, options[:amount], creditcard, options))
+      def refund(money, authorization, options = {})
+        commit :refund, build_reference_request(money, authorization, options)
+      end
+
+      def authorize(money, credit_card, options = {})
+        commit :authorization, build_purchase_request(money, credit_card, options)
+      end
+
+      def capture(money, authorization, options = {})
+        commit :capture, build_reference_request(money, authorization, options)
+      end
+
+      def store(credit_card, options = {})
+        commit_periodic(:addcrn, build_store_request(credit_card, options))
       end
 
       def unstore(identification, options = {})
-        options[:billing_id] = identification
-        commit_periodic(build_periodic_item(:deletecrn, options[:amount], nil, options))
+        commit_periodic(:deletecrn, build_unstore_request(identification, options))
       end
 
       private
@@ -108,7 +107,7 @@ module ActiveMerchant #:nodoc:
         xml.target!
       end
 
-      def build_reference_request(money, reference)
+      def build_reference_request(money, reference, options)
         xml = Builder::XmlMarkup.new
 
         transaction_id, order_id, preauth_id, original_amount = reference.split('*')
@@ -119,18 +118,20 @@ module ActiveMerchant #:nodoc:
         xml.tag! 'purchaseOrderNo', order_id
         xml.tag! 'preauthID', preauth_id
 
+        add_metadata(xml, options)
+
         xml.target!
       end
 
       #Generate payment request XML
-      # - API is set to allow multiple Txn's but currentlu only allows one
+      # - API is set to allow multiple Txn's but currently only allows one
       # - txnSource = 23 - (XML)
       def build_request(action, body)
         xml = Builder::XmlMarkup.new
         xml.instruct!
         xml.tag! 'NABTransactMessage' do
           xml.tag! 'MessageInfo' do
-            xml.tag! 'messageID', Utils.generate_unique_id.slice(0, 30)
+            xml.tag! 'messageID', SecureRandom.hex(15)
             xml.tag! 'messageTimestamp', generate_timestamp
             xml.tag! 'timeoutValue', request_timeout
             xml.tag! 'apiVersion', API_VERSION
@@ -156,32 +157,12 @@ module ActiveMerchant #:nodoc:
         xml.target!
       end
 
-      def build_periodic_item(action, money, credit_card, options)
-        xml = Builder::XmlMarkup.new
-
-        xml.tag! 'actionType', action.to_s
-        xml.tag! 'periodicType', PERIODIC_TYPES[action] if PERIODIC_TYPES[action]
-        xml.tag! 'currency', options[:currency] || currency(money)
-        xml.tag! 'crn', options[:billing_id]
-
-        if credit_card
-          xml.tag! 'CreditCardInfo' do
-            xml.tag! 'cardNumber', credit_card.number
-            xml.tag! 'expiryDate', expdate(credit_card)
-            xml.tag! 'cvv', credit_card.verification_value if credit_card.verification_value?
-          end
-        end
-        xml.tag! 'amount', amount(money)
-
-        xml.target!
-      end
-
-      def build_periodic_request(body)
+      def build_periodic_request(action, body)
         xml = Builder::XmlMarkup.new
         xml.instruct!
         xml.tag! 'NABTransactMessage' do
           xml.tag! 'MessageInfo' do
-            xml.tag! 'messageID', ActiveMerchant::Utils.generate_unique_id.slice(0, 30)
+            xml.tag! 'messageID', SecureRandom.hex(15)
             xml.tag! 'messageTimestamp', generate_timestamp
             xml.tag! 'timeoutValue', request_timeout
             xml.tag! 'apiVersion', PERIODIC_API_VERSION
@@ -196,6 +177,8 @@ module ActiveMerchant #:nodoc:
           xml.tag! 'Periodic' do
             xml.tag! 'PeriodicList', "count" => 1 do
               xml.tag! 'PeriodicItem', "ID" => 1 do
+                xml.tag! 'actionType', action.to_s
+                xml.tag! 'periodicType', PERIODIC_TYPES[action] if PERIODIC_TYPES[action]
                 xml << body
               end
             end
@@ -205,20 +188,50 @@ module ActiveMerchant #:nodoc:
         xml.target!
       end
 
+      def build_purchase_using_stored_card_request(money, identification, options)
+        xml = Builder::XmlMarkup.new
+
+        xml.tag! 'crn', identification
+        xml.tag! 'currency', options[:currency] || currency(money)
+        xml.tag! 'amount', amount(money)
+
+        xml.target!
+      end
+
+      def build_store_request(credit_card, options)
+        xml = Builder::XmlMarkup.new
+
+        xml.tag! 'crn', options[:billing_id] || SecureRandom.hex(10)
+        xml.tag! 'CreditCardInfo' do
+          xml.tag! 'cardNumber', credit_card.number
+          xml.tag! 'expiryDate', expdate(credit_card)
+          xml.tag! 'cvv', credit_card.verification_value if credit_card.verification_value?
+        end
+
+        xml.target!
+      end
+
+      def build_unstore_request(identification, options)
+        xml = Builder::XmlMarkup.new
+
+        xml.tag! 'crn', identification
+        xml.target!
+      end
+
       def commit(action, request)
         response = parse(ssl_post(test? ? self.test_url : self.live_url, build_request(action, request)))
 
         Response.new(success?(response), message_from(response), response,
           :test => test?,
-          :authorization => authorization_from(response)
+          :authorization => authorization_from(action, response)
         )
       end
 
-      def commit_periodic(request)
-        response = parse(ssl_post(test? ? self.test_periodic_url : self.live_periodic_url, build_periodic_request(request)))
+      def commit_periodic(action, request)
+        response = parse(ssl_post(test? ? self.test_periodic_url : self.live_periodic_url, build_periodic_request(action, request)))
         Response.new(success?(response), message_from(response), response,
           :test => test?,
-          :authorization => authorization_from(response)
+          :authorization => authorization_from(action, response)
         )
       end
 
@@ -226,8 +239,12 @@ module ActiveMerchant #:nodoc:
         SUCCESS_CODES.include?(response[:response_code])
       end
 
-      def authorization_from(response)
-        [response[:txn_id], response[:purchase_order_no], response[:preauth_id], response[:amount]].join('*')
+      def authorization_from(action, response)
+        if action == :addcrn
+          response[:crn]
+        else
+          [response[:txn_id], response[:purchase_order_no], response[:preauth_id], response[:amount]].join('*')
+        end
       end
 
       def message_from(response)
@@ -262,6 +279,10 @@ module ActiveMerchant #:nodoc:
       def generate_timestamp
         time = Time.now.utc
         time.strftime("%Y%d%m%H%M%S#{time.usec}+000")
+      end
+
+      def request_timeout
+        @options[:request_timeout] || 60
       end
 
     end

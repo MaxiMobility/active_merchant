@@ -12,7 +12,7 @@ module ActiveMerchant
     # login - The unique id of the merchant
     # password - The secret is used to digitally sign the request
     # account - This is an optional third part of the authentication process
-    # and is used if the merchant wishes do distuinguish cc traffic from the different sources
+    # and is used if the merchant wishes do distinguish cc traffic from the different sources
     # by using a different account. This must be created in advance
     #
     # the Realex team decided to make the orderid unique per request,
@@ -28,13 +28,14 @@ module ActiveMerchant
         'diners_club'       => 'DINERS',
         'switch'            => 'SWITCH',
         'solo'              => 'SWITCH',
-        'laser'             => 'LASER'
+        'laser'             => 'LASER',
+        'maestro'           => 'MC'
       }
 
       self.money_format = :cents
       self.default_currency = 'EUR'
       self.supported_cardtypes = [ :visa, :master, :american_express, :diners_club, :switch, :solo, :laser ]
-      self.supported_countries = [ 'IE', 'GB' ]
+      self.supported_countries = %w(IE GB FR BE NL LU IT)
       self.homepage_url = 'http://www.realexpayments.com/'
       self.display_name = 'Realex'
 
@@ -73,7 +74,7 @@ module ActiveMerchant
       end
 
       def credit(money, authorization, options = {})
-        deprecated CREDIT_DEPRECATION_MESSAGE
+        ActiveMerchant.deprecated CREDIT_DEPRECATION_MESSAGE
         refund(money, authorization, options)
       end
 
@@ -86,8 +87,11 @@ module ActiveMerchant
       def commit(request)
         response = parse(ssl_post(self.live_url, request))
 
-        Response.new(response[:result] == "00", message_from(response), response,
-          :test => response[:message] =~ /\[ test system \]/,
+        Response.new(
+          (response[:result] == "00"),
+          message_from(response),
+          response,
+          :test => (response[:message] =~ %r{\[ test system \]}),
           :authorization => authorization_from(response),
           :cvv_result => response[:cvnresult],
           :avs_result => {
@@ -187,14 +191,14 @@ module ActiveMerchant
 
           if billing_address
             xml.tag! 'address', 'type' => 'billing' do
-              xml.tag! 'code', format_shipping_zip_code(billing_address[:zip])
+              xml.tag! 'code', format_address_code(billing_address)
               xml.tag! 'country', billing_address[:country]
             end
           end
 
           if shipping_address
             xml.tag! 'address', 'type' => 'shipping' do
-              xml.tag! 'code', format_shipping_zip_code(shipping_address[:zip])
+              xml.tag! 'code', format_address_code(shipping_address)
               xml.tag! 'country', shipping_address[:country]
             end
           end
@@ -240,8 +244,9 @@ module ActiveMerchant
         end
       end
 
-      def format_shipping_zip_code(zip)
-        zip.to_s.gsub(/\W/, '')
+      def format_address_code(address)
+        code = [address[:zip].to_s, address[:address1].to_s + address[:address2].to_s]
+        code.collect{|e| e.gsub(/\D/, "")}.reject{|e| e.empty?}.join("|")
       end
 
       def new_timestamp
@@ -259,16 +264,6 @@ module ActiveMerchant
 
       def expiry_date(credit_card)
         "#{format(credit_card.month, :two_digits)}#{format(credit_card.year, :two_digits)}"
-      end
-
-      def normalize(field)
-        case field
-        when "true"   then true
-        when "false"  then false
-        when ""       then nil
-        when "null"   then nil
-        else field
-        end
       end
 
       def message_from(response)
