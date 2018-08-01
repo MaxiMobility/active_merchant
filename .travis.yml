@@ -3,6 +3,7 @@ script: "bundle exec rake test:units"
 sudo: false
 
 rvm:
+- "2.5"
 - "2.2"
 - "2.1"
 - "2.0"
@@ -12,8 +13,4 @@ gemfile:
 - Gemfile.rails40
 - Gemfile.rails41
 - Gemfile.rails42
-
-notifications:
-  email:
-  - payments-dev@shopify.com
-  - nathaniel@talbott.ws
+- Gemfile.rails52
