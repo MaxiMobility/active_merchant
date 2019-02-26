@@ -121,10 +121,10 @@ module ActiveMerchant #:nodoc:
         class_inheritable_accessor :live_redirect_url
       end
 
-      self.test_url = 'https://webpay3gdesa.transbank.cl/webpayserver/wswebpay/OneClickPaymentService'
+      self.test_url = 'https://webpay3gdint.transbank.cl/webpayserver/wswebpay/OneClickPaymentService'
       self.live_url = 'https://webpay3g.transbank.cl/webpayserver/wswebpay/OneClickPaymentService'
 
-      self.test_redirect_url = "https://webpay3gdesa.transbank.cl/webpayserver/bp_inscription.cgi"
+      self.test_redirect_url = "https://webpay3gdint.transbank.cl/webpayserver/bp_inscription.cgi"
       self.live_redirect_url = "https://webpay3g.transbank.cl/webpayserver/bp_inscription.cgi"
 
       self.supported_countries = ['CL']
