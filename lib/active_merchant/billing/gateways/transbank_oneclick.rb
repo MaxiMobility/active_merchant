@@ -344,7 +344,7 @@ module ActiveMerchant #:nodoc:
       #
       def build_reverse_body(xml, data)
         xml['web'].reverse('xmlns:web' => TRANSBANK_NAMESPACE) do
-          xml_arg(xml, { buyOrder: data[:order_id] })
+          xml_arg(xml, { buyorder: data[:order_id] })
         end
       end
 
