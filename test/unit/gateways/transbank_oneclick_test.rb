@@ -98,7 +98,19 @@ class TransbankOneclickTest < Test::Unit::TestCase
   end
 
   def test_successful_void
+    @gateway.expects(:ssl_post).with(
+      anything,
+      all_of(
+        includes("<ds:SignatureValue>Qe0VqISTLqSwvqVeddhcsbmK0q8l4nUwbJBkOaFJJ+oIh3iMS9Ef09ttX4SYq95pbsDNyT5E99kKulxiCs3VR48MIXfgqvrpXCKfxT1btoKKg5mfmfG4hj+lPD2dy6hN/c6yeQyPcEaFisy2Khegrnz0MJXw8MMCO5lVQhih8cEQ/mfAa6lV2urQBMlXl6lyIZytWd7IsZ90F1a+KS53kH90BZbFINJIq0ihS+mnocOLySsNU5sqxpvre6jmUKF4ln5vrUPk0P72Dj/c3IeKPIHRvinnQIeMCZo08sMUySoRzmM2Pvql4ql1gEKpw+s0OqsIeSlNGDKknntQ7lbZ1Q==</ds:SignatureValue>"),
+        includes("<buyorder>20130123122904961</buyorder>")
+      )
+    ).returns(successful_void_response)
 
+    assert response = @gateway.void(@options[:order_id])
+
+    assert_success response
+    assert_equal @options[:order_id], response.authorization
+    assert response.test?
   end
 
   #def test_unsuccessful_request

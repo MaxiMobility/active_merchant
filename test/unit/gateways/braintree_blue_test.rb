@@ -553,7 +553,7 @@ class BraintreeBlueTest < Test::Unit::TestCase
         :apple_pay_card => {
           :number => '4111111111111111',
           :expiration_month => '09',
-          :expiration_year => '2016',
+          :expiration_year => '2020',
           :cardholder_name => 'Longbob Longsen',
           :cryptogram => '111111111100cryptogram'
         }

@@ -295,12 +295,8 @@ module ActiveMerchant #:nodoc:
       #   :return_url
       #
       def build_init_inscription_body(xml, data)
-        xml['web'].initInscription do
-          xml_arg(xml) do
-            xml.email       data[:email]
-            xml.responseURL data[:return_url]
-            xml.username    data[:username]
-          end
+        xml['web'].initInscription('xmlns:web' => TRANSBANK_NAMESPACE) do
+          xml_arg(xml, { email: data[:email], responseURL: data[:return_url], username: data[:username] })
         end
       end
 
@@ -309,10 +305,8 @@ module ActiveMerchant #:nodoc:
       #   :token
       #
       def build_finish_inscription_body(xml, data)
-        xml['web'].finishInscription do
-          xml_arg(xml) do
-            xml.token data[:token]
-          end
+        xml['web'].finishInscription('xmlns:web' => TRANSBANK_NAMESPACE) do
+          xml_arg(xml, { token: data[:token] })
         end
       end
 
@@ -322,11 +316,8 @@ module ActiveMerchant #:nodoc:
       #   :username => Users human name, not necessarily login
       #
       def build_remove_user_body(xml, data)
-        xml['web'].removeUser do
-          xml_arg(xml) do
-            xml.tbkUser  data[:token]
-            xml.username data[:username]
-          end
+        xml['web'].removeUser('xmlns:web' => TRANSBANK_NAMESPACE) do
+          xml_arg(xml, { tbkUser: data[:token], username: data[:username] })
         end
       end
 
@@ -337,13 +328,13 @@ module ActiveMerchant #:nodoc:
       #   :order_id
       #
       def build_authorize_body(xml, data)
-        xml['web'].authorize do
-          xml_arg(xml) do
-            xml.amount   data[:amount]
-            xml.buyOrder data[:order_id]
-            xml.tbkUser  data[:token]
-            xml.username data[:username]
-          end
+        xml['web'].authorize('xmlns:web' => TRANSBANK_NAMESPACE) do
+          xml_arg(xml, {
+            amount: data[:amount],
+            buyOrder: data[:order_id],
+            tbkUser: data[:token],
+            username: data[:username]
+          })
         end
       end
 
@@ -352,16 +343,17 @@ module ActiveMerchant #:nodoc:
       #  :order_id
       #
       def build_reverse_body(xml, data)
-        xml['web'].reverse do
-          xml_arg(xml) do
-            xml.buyorder data[:order_id]
-          end
+        xml['web'].reverse('xmlns:web' => TRANSBANK_NAMESPACE) do
+          xml_arg(xml, { buyorder: data[:order_id] })
         end
       end
 
-      def xml_arg(xml)
-        xml.arg0('xmlns' => TRANSBANK_NAMESPACE) do
-          yield xml
+      def xml_arg(xml, params)
+        xml.arg0 do
+          params.each do |key, value|
+            xml.parent.namespace = xml.parent.namespace_definitions.first
+            xml.send key, value
+          end
         end
       end
 
@@ -401,7 +393,7 @@ module ActiveMerchant #:nodoc:
       # complicated and can be easily put off course.
       def build_soap_envelope
         xml = Nokogiri::XML::Builder.new do |xml|
-          xml.Envelope('xmlns:soap' => SOAP_NAMESPACE, 'xmlns:web'  => TRANSBANK_NAMESPACE, 'xmlns:wsse' => WSSE_NAMESPACE) do
+          xml.Envelope('xmlns:soap' => SOAP_NAMESPACE, 'xmlns:web' => TRANSBANK_NAMESPACE, 'xmlns:wsse' => WSSE_NAMESPACE) do
             # Add soap namespace to root
             ns = xml.parent.namespace_definitions.find{|ns|ns.prefix=="soap"}
             xml.doc.root.namespace = ns
