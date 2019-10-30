@@ -243,6 +243,7 @@ module ActiveMerchant #:nodoc:
               xml.tag! 'n2:ReferenceID', options[:reference_id]
               xml.tag! 'n2:PaymentAction', action
               xml.tag! 'n2:PaymentType', options[:payment_type] || 'Any'
+              xml.tag! 'n2:Custom', options[:custom]
               add_payment_details(xml, money, currency_code, options)
               xml.tag! 'n2:IPAddress', options[:ip]
             end
