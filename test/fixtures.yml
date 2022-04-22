@@ -940,6 +940,17 @@ transax:
   login: transaxdemo
   password: nelix123
 
+transbank_webpay_oneclick:
+  merchant_id: 12312312312312
+  private_key: |
+    PASTE PRIVATE KEY
+  certificate: |
+    PASTE CERTIFICATE
+
+transnational:
+  login: demo
+  password: password
+
 # Working credentials, no need to replace
 trust_commerce:
   login: 'TestMerchant'
